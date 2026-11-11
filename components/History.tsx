@@ -15,6 +15,21 @@ export function History() {
   const [rows, setRows] = useState<Stored[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listAnalyses();
+        if (!cancelled) setRows(data);
+      } catch {
+        if (!cancelled) setRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function load() {
     try {
       setRows(await listAnalyses());
@@ -22,9 +37,6 @@ export function History() {
       setRows([]);
     }
   }
-  useEffect(() => {
-    void load();
-  }, []);
 
   async function remove(id: string) {
     setBusy(id);

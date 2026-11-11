@@ -128,17 +128,6 @@ export function Stage(props: {
           height="min(68vh, 720px)"
           toolbar={null}
         />
-        </div>
-        <Diagram
-          data={props.data}
-          title={props.title}
-          play={seen}
-          step={props.trace.step}
-          selected={props.selected}
-          onSelect={props.onSelect}
-          height="min(68vh, 720px)"
-          toolbar={null}
-        />
       </div>
       <TraceBar trace={props.trace} flow={props.data.flow} />
       <Legend data={props.data} />
