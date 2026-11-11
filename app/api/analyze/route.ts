@@ -44,11 +44,13 @@ export async function POST(req: Request) {
     return Response.json({ message: messageOf(e) }, { status: statusOf(e) });
   }
 
+  // Bound the whole analysis, not just the HTTP response.
+  const jobSignal = AbortSignal.any([req.signal, AbortSignal.timeout(cfg.MAX_JOB_MS)]);
   const userToken = req.headers.get("x-github-token")?.trim() || null;
 
   let resolved: Resolved;
   try {
-    resolved = await resolve(ref, userToken, req.signal);
+    resolved = await resolve(ref, userToken, jobSignal);
   } catch (e) {
     return Response.json({ message: messageOf(e) }, { status: statusOf(e) });
   }
@@ -62,7 +64,7 @@ export async function POST(req: Request) {
 
     const cached = await getCache(resolved.ref.repo, resolved.sha);
     if (cached) {
-      const allowed = !cached.private || (await canRead(resolved.ref, userToken, req.signal));
+      const allowed = !cached.private || (await canRead(resolved.ref, userToken, jobSignal));
       if (allowed) {
         send("stage", {
           id: "cache",
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
       label: "Reading files",
       detail: "Downloading the archive and dropping what is not source.",
     });
-    const repo = await ingest(resolved, userToken, req.signal);
+    const repo = await ingest(resolved, userToken, jobSignal);
     send("stage", {
       id: "ingest",
       label: "Files collected",
@@ -103,7 +105,7 @@ export async function POST(req: Request) {
     let explored = await explore({
       repo,
       facts,
-      signal: req.signal,
+      signal: jobSignal,
       onProgress: (detail) =>
         send("stage", { id: "explore", label: "Exploring", detail: `The agent is reading the repository. ${detail}.` }),
       onTrace: (trace) => send("trace", trace),
@@ -126,7 +128,7 @@ export async function POST(req: Request) {
         repo,
         facts,
         feedback: checked.failures.slice(0, 12),
-        signal: req.signal,
+        signal: jobSignal,
         onTrace: (trace) => send("trace", trace),
       });
       checked = verify(explored.analysis, repo, facts);
@@ -144,7 +146,7 @@ export async function POST(req: Request) {
       detail: "The prompt that briefs your coding agent.",
     });
     let brief = "";
-    for await (const text of writeBrief(checked.analysis, facts, req.signal)) {
+    for await (const text of writeBrief(checked.analysis, facts, jobSignal)) {
       brief += text;
       send("prompt", { text });
     }
