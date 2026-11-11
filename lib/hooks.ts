@@ -5,11 +5,9 @@ import type { Analysis, AnalysisCore, Stage, TraceItem } from "./schema";
 
 export type Route =
   | { name: "home" }
-  | { name: "history" }
   | { name: "example" }
   | { name: "run"; url: string }
   | { name: "local"; id: string }
-  | { name: "canvas"; id: string }
   | { name: "shared"; id: string };
 
 function parse(hash: string): Route {
@@ -21,10 +19,8 @@ function parse(hash: string): Route {
   } catch {
     arg = "";
   }
-  if (a === "history") return { name: "history" };
   if (a === "example") return { name: "example" };
   if (a === "run" && arg) return { name: "run", url: arg };
-  if (a === "r" && arg && parts[2] === "canvas") return { name: "canvas", id: arg };
   if (a === "r" && arg) return { name: "local", id: arg };
   if (a === "s" && arg) return { name: "shared", id: arg };
   return { name: "home" };
