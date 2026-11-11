@@ -1,5 +1,6 @@
 import { strFromU8, unzipSync } from "fflate";
 import ignore from "ignore";
+import { ArchiveLimitExceeded, createArchiveFilter } from "./archive-budget";
 import { config, HttpError } from "./config";
 
 export type RepoRef = { owner: string; name: string; repo: string };
@@ -232,7 +233,33 @@ export async function ingest(resolved: Resolved, userToken: string | null, signa
     throw new HttpError(413, "This repository is too large to analyze.");
   }
 
-  const entries = unzipSync(archive);
+  const skipped = emptySkips();
+  const budget = createArchiveFilter({
+    maxFileBytes: cfg.MAX_FILE_BYTES,
+    maxTotalBytes: cfg.MAX_TOTAL_BYTES,
+    maxFiles: cfg.MAX_FILES,
+  });
+  let entries: ReturnType<typeof unzipSync>;
+  try {
+    entries = unzipSync(archive, {
+      filter(file) {
+        if (file.name.endsWith("/")) return false;
+        const reason = skipReason(file.name);
+        if (reason) {
+          skipped[reason] += 1;
+          return false;
+        }
+        if (file.originalSize > cfg.MAX_FILE_BYTES) {
+          skipped.large += 1;
+          return false;
+        }
+        return budget(file);
+      },
+    });
+  } catch (e) {
+    if (e instanceof ArchiveLimitExceeded) throw new HttpError(413, e.message);
+    throw e;
+  }
   const names = Object.keys(entries);
   const prefix = names.length ? `${names[0].split("/")[0]}/` : "";
 
@@ -240,7 +267,6 @@ export async function ingest(resolved: Resolved, userToken: string | null, signa
   const rules = ignore().add(gitignoreRaw ? strFromU8(gitignoreRaw) : "");
 
   const files = new Map<string, string>();
-  const skipped = emptySkips();
   let bytes = 0;
 
   for (const [full, data] of Object.entries(entries)) {
