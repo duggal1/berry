@@ -99,7 +99,10 @@ export function Workspace({
     [analysis.modules, analysis.edges, analysis.flow],
   );
   const picked = analysis.modules.find((m) => m.id === selected);
-  const toStage = () => stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const toStage = () => stageRef.current?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    block: "start",
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -153,7 +156,7 @@ export function Workspace({
       <div className="mx-auto mt-14 max-w-5xl px-5 md:px-10">
         {picked && <ModuleDetail m={picked} analysis={analysis} onClose={() => setSelected(null)} />}
 
-        <div role="tablist" className="flex gap-8 overflow-x-auto pb-3">
+        <div role="tablist" className="flex snap-x snap-proximity gap-8 overflow-x-auto overscroll-x-contain pb-3 md:snap-none">
           {TABS.map((t) => {
             const on = tab === t.id;
             return (
@@ -163,7 +166,7 @@ export function Workspace({
                 type="button"
                 aria-selected={on}
                 onClick={() => setTab(t.id)}
-                className={`t-h3 relative shrink-0 pb-3 transition-colors duration-100 ${
+                className={`t-h3 relative shrink-0 snap-start pb-3 transition-colors duration-100 ${
                   on ? "text-neutral-950" : "text-neutral-300 hover:text-neutral-500"
                 }`}
               >
