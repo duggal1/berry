@@ -13,6 +13,8 @@ export const Module = z.object({
   path: z.string(),
   files: z.array(z.string()),
   group: z.string(),
+  /** The framework, language, database or service this part is actually built with. */
+  tech: z.string().optional(),
 });
 
 export const Edge = z.object({

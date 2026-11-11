@@ -22,6 +22,18 @@ const slug = (s: string) =>
 
 const firstWords = (s: string, n: number) => s.trim().split(/\s+/).slice(0, n).join(" ");
 
+/** The named technology for a module. The model names it; the repository is the fallback. */
+function tech(raw: string | undefined, kind: Module["kind"], files: string[], facts: FactSheet): string {
+  const named = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 32);
+  if (named) return named;
+  if (kind === "external") return "";
+  const lang = files
+    .map((f) => facts.files.find((x) => x.path === f)?.language)
+    .find((l) => l && l !== "Other");
+  return (lang ?? "").slice(0, 32);
+}
+
+
 function snippetAppears(file: string, snippet: string): boolean {
   if (!snippet) return false;
   const trimmed = snippet.trim();
@@ -90,6 +102,7 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       path: path || (kind === "external" ? "external" : "."),
       files: kind === "external" ? [] : keptFiles,
       group: raw.group ?? "",
+      tech: tech(raw.tech, kind, keptFiles, facts),
     });
     moduleIds.add(id);
   }

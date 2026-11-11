@@ -3,6 +3,7 @@ import { animate, motion, useReducedMotion } from "motion/react";
 import type { Edge, Module, Step } from "@/lib/schema";
 import { EASE_QUINT, SPRING } from "@/lib/motion";
 import { ArrowIcon } from "@/components/ui";
+import { logoUrl } from "@/lib/logos";
 import { INK, KIND, ROLE, STAGE_BG } from "./palette";
 import { cylinderPaths, queuePaths, rectPaths } from "./rough";
 import type { RPath } from "./rough";
@@ -76,6 +77,22 @@ const SketchNode = memo(function SketchNode(p: {
   );
   const external = m.kind === "external";
   const datastore = m.kind === "datastore";
+  const logo = logoUrl(m.tech);
+  const [hasLogo, setHasLogo] = useState(false);
+  useEffect(() => {
+    if (!logo) {
+      setHasLogo(false);
+      return;
+    }
+    let live = true;
+    const img = new Image();
+    img.onload = () => live && setHasLogo(true);
+    img.onerror = () => live && setHasLogo(false);
+    img.src = logo;
+    return () => {
+      live = false;
+    };
+  }, [logo]);
   const drawn = useDrawn(play, p.delay);
   const dly = reduce ? 0 : p.delay;
   const dur = reduce ? 0 : DRAW;
@@ -169,8 +186,18 @@ const SketchNode = memo(function SketchNode(p: {
           animate={play ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
           transition={{ duration: 0.18, delay: drawn ? 0 : dly + dur + 0.2 }}
         >
+          {hasLogo && logo && (
+            <image
+              href={logo}
+              x={19}
+              y={16 + ty}
+              width={17}
+              height={17}
+              preserveAspectRatio="xMidYMid meet"
+            />
+          )}
           <text
-            x={20}
+            x={hasLogo ? 44 : 20}
             y={30 + ty}
             fontSize={17}
             fontWeight={650}

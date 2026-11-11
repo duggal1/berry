@@ -89,7 +89,8 @@ function placeLabel(p: PEdge, nodes: Rect[], taken: Rect[]) {
 }
 
 function size(m: Module) {
-  const base = Math.max(m.name.length * 9.6, m.path.length * 7) + 40 + (m.kind === "queue" ? 36 : 0);
+  const base =
+    Math.max(m.name.length * 9.6, m.path.length * 7) + 40 + (m.kind === "queue" ? 36 : 0) + (m.tech ? 26 : 0);
   return { width: Math.max(176, snap(base)), height: m.kind === "datastore" ? 80 : 72 };
 }
 
