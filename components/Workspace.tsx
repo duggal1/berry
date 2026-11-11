@@ -4,7 +4,7 @@ import { shareAnalysis } from "@/lib/api";
 import { useTrace } from "@/lib/hooks";
 import { EASE_QUINT } from "@/lib/motion";
 import { prefs } from "@/lib/prefs";
-import type { Analysis } from "@/lib/schema";
+import { GENERATOR_VERSION, STORY_SCHEMA_VERSION, type Analysis } from "@/lib/schema";
 import { ROLE } from "@/sketch/palette";
 import { polyPaths } from "@/sketch/rough";
 import { AskPane, FlowPane, InterviewPane, PromptPane, SummaryPane } from "./Panels";
@@ -84,20 +84,22 @@ export function Workspace({
   demo = false,
   below = false,
   onSaveCopy,
+  onReanalyze,
 }: {
   analysis: Analysis;
   running?: boolean;
   demo?: boolean;
   below?: boolean;
   onSaveCopy?: () => void;
+  onReanalyze?: () => void;
 }) {
-  const trace = useTrace(analysis.flow.length);
+  const trace = useTrace(analysis.story);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("summary");
   const stageRef = useRef<HTMLDivElement>(null);
   const data = useMemo(
-    () => ({ modules: analysis.modules, edges: analysis.edges, flow: analysis.flow }),
-    [analysis.modules, analysis.edges, analysis.flow],
+    () => ({ modules: analysis.modules, edges: analysis.edges, story: analysis.story }),
+    [analysis.modules, analysis.edges, analysis.story],
   );
   const picked = analysis.modules.find((m) => m.id === selected);
   const toStage = () => stageRef.current?.scrollIntoView({
@@ -131,6 +133,9 @@ export function Workspace({
           <Chip i={1}>{analysis.meta.sha.slice(0, 7)}</Chip>
           <Chip i={2}>{analysis.modules.length} modules</Chip>
           {demo && <Chip i={3}>example</Chip>}
+          {(analysis.meta.storyVersion < STORY_SCHEMA_VERSION || analysis.meta.generatorVersion !== GENERATOR_VERSION) && (
+            <Chip i={4}>older storyboard</Chip>
+          )}
         </div>
         {!demo && !onSaveCopy && !running && (
           <div className="mt-6">
@@ -140,6 +145,11 @@ export function Workspace({
         {onSaveCopy && (
           <div className="mt-6">
             <Button onClick={onSaveCopy}>Save to this browser</Button>
+          </div>
+        )}
+        {onReanalyze && (
+          <div className="mt-6">
+            <Button onClick={onReanalyze}>Generate updated storyboard</Button>
           </div>
         )}
       </header>
@@ -190,7 +200,7 @@ export function Workspace({
           )}
           {tab === "path" && (
             <FlowPane
-              flow={analysis.flow}
+              story={analysis.story}
               step={trace.step}
               go={(i) => {
                 trace.go(i);

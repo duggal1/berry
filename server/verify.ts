@@ -1,8 +1,8 @@
-import { AnalysisCore } from "@/lib/schema";
-import type { Edge, Module, Step } from "@/lib/schema";
+import { AnalysisCore, GENERATOR_VERSION, STORY_SCHEMA_VERSION } from "../lib/schema.ts";
+import type { Edge, Module, RuntimeEdgeKind, Story, StoryAction, StoryScene } from "../lib/schema.ts";
 import type { Repository } from "./ingest";
-import { supportsLink } from "./scan";
-import { recoverEdges } from "./graph";
+import { recoverEdges } from "./graph.ts";
+import { supportsLink } from "./scan.ts";
 import type { FactSheet } from "./scan";
 
 export type VerifyResult = {
@@ -14,282 +14,568 @@ export type VerifyResult = {
 };
 
 const slug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40) || "module";
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "item";
 
 const firstWords = (s: string, n: number) => s.trim().split(/\s+/).slice(0, n).join(" ");
 
-/** A clean domain for an outside service, used to fetch its logo. */
 function domain(raw: string | undefined): string {
-  const d = (raw ?? "")
+  return (raw ?? "")
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
     .split("/")[0]
     .slice(0, 64);
-  return d;
 }
 
-/** The named technology for a module. The model names it; the repository is the fallback. */
 function tech(raw: string | undefined, kind: Module["kind"], files: string[], facts: FactSheet): string {
   const named = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 32);
-  if (named) return named;
-  if (kind === "external") return "";
-  const lang = files
-    .map((f) => facts.files.find((x) => x.path === f)?.language)
-    .find((l) => l && l !== "Other");
-  return (lang ?? "").slice(0, 32);
+  if (named || kind === "external") return named;
+  const language = files.map((file) => facts.files.find((item) => item.path === file)?.language)
+    .find((value) => value && value !== "Other");
+  return (language ?? "").slice(0, 32);
 }
 
-
 function snippetAppears(file: string, snippet: string): boolean {
-  if (!snippet) return false;
   const trimmed = snippet.trim();
-  if (trimmed.length > 120) return false;
-  if (trimmed.includes("\n")) return false;
+  if (!trimmed || trimmed.length > 120 || trimmed.includes("\n")) return false;
   return file.split(/\r?\n/).some((line) => line.trim() === trimmed);
 }
 
 function fallbackSummary(modules: Module[], repo: string): string[] {
   if (!modules.length) return [`This repository, ${repo}, has no readable source files.`];
-  return [
-    `${repo} is made up of ${modules.length} parts.`,
-    ...modules.slice(0, 5).map((m) => `${m.name} owns ${m.purpose.replace(/\.$/, "").toLowerCase()}.`),
-  ];
+  return [`${repo} is made up of ${modules.length} source-backed parts.`, ...modules.slice(0, 5).map((m) => `${m.name} owns ${m.purpose.replace(/\.$/, "").toLowerCase()}.`)];
 }
 
-/** Step 6 of the pipeline: every claim is checked against the repository before it ships. */
+function isRuntimeKind(kind: Edge["kind"]): kind is RuntimeEdgeKind {
+  return kind === "call" || kind === "data" || kind === "event";
+}
+
+function idsForAction(action: StoryAction): string[] {
+  switch (action.kind) {
+    case "enter":
+    case "exit":
+    case "effect":
+    case "spawn":
+      return [action.moduleId];
+    case "return":
+      return [];
+    case "traverse":
+    case "fork":
+    case "join":
+    case "outcome":
+      return [];
+  }
+}
+
+/** Validate the final model graph and storyboard together against the pinned source. */
 export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): VerifyResult {
   const failures: string[] = [];
   let dropped = 0;
   let repaired = 0;
-
   const modules: Module[] = [];
   const moduleIds = new Set<string>();
-  const aliases = new Map<string, string | null>();
+  const moduleAliases = new Map<string, string | null>();
 
-  // The model may use display names, mixed-case IDs or punctuation in edge
-  // endpoints. Canonicalize references once instead of silently dropping links.
-  function addAlias(raw: string, id: string) {
+  function addModuleAlias(raw: string, id: string) {
     if (!raw) return;
     for (const key of [raw, slug(raw)]) {
-      const previous = aliases.get(key);
-      if (previous === undefined) aliases.set(key, id);
-      else if (previous !== id) aliases.set(key, null); // ambiguous; never guess
+      const previous = moduleAliases.get(key);
+      if (previous === undefined) moduleAliases.set(key, id);
+      else if (previous !== id) moduleAliases.set(key, null);
     }
   }
-  const resolveId = (raw: string) =>
-    aliases.get(raw) ?? aliases.get(slug(raw)) ?? raw;
 
-  for (const raw of core.modules ?? []) {
+  function resolveModuleId(raw: string): string | null {
+    if (moduleAliases.has(raw)) return moduleAliases.get(raw) ?? null;
+    const normalized = slug(raw);
+    if (moduleAliases.has(normalized)) return moduleAliases.get(normalized) ?? null;
+    return raw;
+  }
+
+  for (const raw of core.modules) {
     let id = slug(raw.id || raw.name);
-    if (!id) continue;
-    while (moduleIds.has(id)) id = `${id}-${modules.length + 1}`;
-    if (id !== slug(raw.id || raw.name)) repaired += 1;
+    while (moduleIds.has(id)) id = `${slug(raw.id || raw.name)}-${modules.length + 1}`;
+    if (id !== raw.id) repaired += 1;
 
-    const files = (raw.files ?? []).filter((f) => repo.files.has(f));
-    const keptFiles = files.length === (raw.files ?? []).length ? files : files;
-    if (keptFiles.length !== (raw.files ?? []).length) repaired += 1;
-
-    const external = raw.kind === "external";
-    if (!external && keptFiles.length === 0) {
+    const files = raw.files.filter((file) => repo.files.has(file));
+    if (files.length !== raw.files.length) {
+      repaired += 1;
+      failures.push(`module ${raw.name} listed source files that do not exist in this commit`);
+    }
+    let kind = raw.kind;
+    if (kind !== "external" && files.length === 0) {
       dropped += 1;
-      failures.push(`module ${raw.name} listed files that do not exist, so it was dropped`);
+      failures.push(`module ${raw.name} has no source file in this commit and was removed`);
       continue;
     }
-
-    let path = raw.path ?? "";
-    if (path && path !== "external" && !keptFiles.some((f) => f.startsWith(path.replace(/\/$/, "") + "/"))) {
-      const first = keptFiles[0];
-      path = first ? first.split("/").slice(0, -1).join("/") || "." : path;
-      repaired += 1;
-    }
-
-    const name = firstWords(raw.name ?? id, 3);
-
-    // An outside service has no files in this repo. If the model listed files, it is not
-    // external, and the sketch must draw it as a real module.
-    let kind = raw.kind;
-    if (kind === "external" && keptFiles.length > 0) {
+    if (kind === "external" && files.length > 0) {
       kind = "service";
       repaired += 1;
     }
-
-    modules.push({
+    const path = raw.path && (raw.path === "external" || files.some((file) => file.startsWith(`${raw.path.replace(/\/$/, "")}/`)))
+      ? raw.path
+      : files[0]?.split("/").slice(0, -1).join("/") || (kind === "external" ? "external" : ".");
+    if (path !== raw.path) repaired += 1;
+    const verifiedModule: Module = {
+      ...raw,
       id,
-      name,
-      role: raw.role,
+      name: firstWords(raw.name || id, 3),
       kind,
-      purpose: raw.purpose ?? "",
-      path: path || (kind === "external" ? "external" : "."),
-      files: kind === "external" ? [] : keptFiles,
-      group: raw.group ?? "",
-      tech: tech(raw.tech, kind, keptFiles, facts),
+      path,
+      files: kind === "external" ? [] : files,
+      purpose: raw.purpose.trim(),
+      group: raw.group.trim(),
+      tech: tech(raw.tech, kind, files, facts),
       domain: domain(raw.domain),
-    });
+    };
+    modules.push(verifiedModule);
     moduleIds.add(id);
-    addAlias(raw.id, id);
-    addAlias(raw.name, id);
+    addModuleAlias(raw.id, id);
+    addModuleAlias(raw.name, id);
   }
 
-  const limited = modules.slice(0, 12);
-  if (limited.length < modules.length) dropped += modules.length - limited.length;
-
-  const byId = new Map(limited.map((m) => [m.id, m]));
+  const byModuleId = new Map(modules.map((module) => [module.id, module]));
   const edges: Edge[] = [];
   const edgeIds = new Set<string>();
   const edgeAliases = new Map<string, string>();
+  const recoveredEdges = recoverEdges(core.modules, core.edges, facts, repo.files);
 
-  for (const raw of core.edges ?? []) {
-    const fromId = resolveId(raw.from);
-    const toId = resolveId(raw.to);
-    let id = slug(raw.id || `${fromId}-${toId}`) || "edge";
-    while (edgeIds.has(id)) id = `${id}-${edges.length + 1}`;
-
-    if (!byId.has(fromId) || !byId.has(toId) || fromId === toId) {
+  for (const raw of recoveredEdges) {
+    const fromId = resolveModuleId(raw.from);
+    const toId = resolveModuleId(raw.to);
+    if (!fromId || !toId || !byModuleId.has(fromId) || !byModuleId.has(toId) || fromId === toId) {
       dropped += 1;
-      failures.push(`edge ${raw.from} to ${raw.to} pointed at a module that does not exist`);
+      failures.push(`edge ${raw.id} references a missing or ambiguous module`);
+      continue;
+    }
+    const source = byModuleId.get(fromId);
+    const file = repo.files.get(raw.evidence.path);
+    if (!source || !file || (source.files.length > 0 && !source.files.includes(raw.evidence.path))) {
+      dropped += 1;
+      failures.push(`edge ${raw.id} cites a source file that is missing or outside its source module`);
+      continue;
+    }
+    if (!snippetAppears(file, raw.evidence.snippet)) {
+      dropped += 1;
+      failures.push(`edge ${raw.id} cites a line that does not occur verbatim in ${raw.evidence.path}`);
       continue;
     }
 
-    const path = raw.evidence?.path ?? "";
-    const fromModule = byId.get(fromId)!;
-    if (fromModule.files.length && !fromModule.files.includes(path)) {
-      dropped += 1;
-      failures.push(`edge ${raw.from} to ${raw.to} cited ${path || "no file"} outside its source module`);
-      continue;
-    }
-    const file = repo.files.get(path);
-    if (!file) {
-      dropped += 1;
-      failures.push(`edge ${raw.from} to ${raw.to} cited ${path || "no file"}, which does not exist`);
-      continue;
-    }
-
-    let snippet = (raw.evidence?.snippet ?? "").trim();
-    if (!snippetAppears(file, snippet)) {
-      dropped += 1;
-      failures.push(
-        `edge ${raw.from} to ${raw.to} cited a line in ${path} that is not in the file verbatim`,
-      );
-      continue;
-    }
-    if (snippet.length > 120) {
-      snippet = snippet.slice(0, 120);
-      repaired += 1;
-    }
-
-    let inferred = raw.inferred !== false;
-    if (!inferred) {
-      const from = byId.get(fromId)!;
-      const to = byId.get(toId)!;
-      const supported = supportsLink(facts, from.files, to.files, to, path, snippet);
-      if (!supported) {
-        inferred = true;
+    const idBase = slug(raw.id || `${fromId}-${toId}`);
+    let id = idBase;
+    while (edgeIds.has(id)) id = `${idBase}-${edges.length + 1}`;
+    if (!raw.inferred) {
+      const target = byModuleId.get(toId);
+      if (!target || !supportsLink(facts, source.files, target.files, target, raw.evidence.path, raw.evidence.snippet, raw.kind)) {
         repaired += 1;
-        failures.push(
-          `edge ${raw.from} to ${raw.to} was not backed by the fact sheet, so it is now marked inferred`,
-        );
+        failures.push(`edge ${raw.id} is source-backed but its relationship kind could not be confirmed, so it is marked inferred`);
       }
     }
-
-    edges.push({
+    const edge: Edge = {
+      ...raw,
       id,
       from: fromId,
       to: toId,
-      kind: raw.kind,
-      label: firstWords(raw.label ?? raw.kind, 3),
-      inferred,
-      evidence: { path, snippet },
-    });
+      label: firstWords(raw.label || raw.kind, 4),
+      inferred: raw.inferred || !supportsLink(
+        facts,
+        source.files,
+        byModuleId.get(toId)?.files ?? [],
+        byModuleId.get(toId),
+        raw.evidence.path,
+        raw.evidence.snippet,
+        raw.kind,
+      ),
+      evidence: { path: raw.evidence.path, snippet: raw.evidence.snippet.trim() },
+    };
+    edges.push(edge);
     edgeIds.add(id);
     edgeAliases.set(raw.id, id);
     edgeAliases.set(slug(raw.id), id);
   }
 
-  const completeEdges = recoverEdges(limited, edges, facts, repo.files);
-  const edgeById = new Map(completeEdges.map((e) => [e.id, e]));
-  const flow: Step[] = [];
-  const stepIds = new Set<string>();
+  const sceneAliases = new Map<string, string>();
+  const sceneIds = new Set<string>();
+  const sceneIdByIndex = core.story.scenes.map((scene, index) => {
+    const base = slug(scene.id || scene.title);
+    let id = base;
+    while (sceneIds.has(id)) id = `${base}-${index + 1}`;
+    sceneIds.add(id);
+    sceneAliases.set(scene.id, id);
+    sceneAliases.set(slug(scene.id), id);
+    if (id !== scene.id) repaired += 1;
+    return id;
+  });
+  const resolveSceneId = (raw: string): string | null => sceneAliases.get(raw) ?? sceneAliases.get(slug(raw)) ?? null;
+  const byEdgeId = new Map(edges.map((edge) => [edge.id, edge]));
+  const scenes: StoryScene[] = [];
 
-  for (const raw of core.flow ?? []) {
-    const moduleId = resolveId(raw.moduleId);
-    if (!byId.has(moduleId)) {
-      dropped += 1;
-      failures.push(`flow step "${raw.title}" referenced a module that does not exist`);
-      continue;
-    }
-    let edgeId = edgeAliases.get(raw.edgeId) ?? edgeAliases.get(slug(raw.edgeId)) ?? raw.edgeId ?? "";
-    if (edgeId && !edgeById.has(edgeId)) {
-      edgeId = "";
-      repaired += 1;
-    }
-    if (edgeId) {
-      const edge = edgeById.get(edgeId)!;
-      const preceding = flow[flow.length - 1];
-      // A trace hop must actually connect the last step to this one.
-      // Merely touching the current node can animate an unrelated edge.
-      if (!preceding || edge.from !== preceding.moduleId || edge.to !== moduleId) {
-        edgeId = "";
-        repaired += 1;
+  for (const [index, raw] of core.story.scenes.entries()) {
+    const actions: StoryAction[] = [];
+    const sceneId = sceneIdByIndex[index];
+    for (const action of raw.actions) {
+      if (["enter", "exit", "effect", "spawn"].includes(action.kind)) {
+        const ids = idsForAction(action);
+        const resolved = ids.map(resolveModuleId);
+        if (resolved.some((id) => !id || !byModuleId.has(id))) {
+          failures.push(`scene ${raw.id} has an action that references a missing or ambiguous module`);
+          dropped += 1;
+          continue;
+        }
+        const mapId = (id: string) => resolveModuleId(id) ?? id;
+        switch (action.kind) {
+          case "enter": actions.push({ ...action, moduleId: mapId(action.moduleId) }); break;
+          case "exit": actions.push({ ...action, moduleId: mapId(action.moduleId) }); break;
+          case "effect": actions.push({ ...action, moduleId: mapId(action.moduleId) }); break;
+          case "spawn": {
+            const targetScene = resolveSceneId(action.sceneId);
+            const afterScene = resolveSceneId(action.afterSceneId);
+            const edgeId = edgeAliases.get(action.edgeId) ?? edgeAliases.get(slug(action.edgeId));
+            const edge = edgeId ? byEdgeId.get(edgeId) : undefined;
+            if (!targetScene || !afterScene || !action.afterResponse || !edge || !isRuntimeKind(edge.kind) || edge.from !== mapId(action.moduleId)) {
+              failures.push(`scene ${raw.id} does not declare an after-response scene for its deferred task`);
+              dropped += 1;
+              continue;
+            }
+            actions.push({ ...action, moduleId: mapId(action.moduleId), edgeId: edge.id, sceneId: targetScene, afterSceneId: afterScene });
+            break;
+          }
+          default: break;
+        }
+        continue;
+      }
+
+      switch (action.kind) {
+        case "return": {
+          const edgeId = edgeAliases.get(action.edgeId) ?? edgeAliases.get(slug(action.edgeId));
+          const edge = edgeId ? byEdgeId.get(edgeId) : undefined;
+          if (!edge || !isRuntimeKind(edge.kind)) {
+            failures.push(`scene ${raw.id} attempts to animate a missing or non-runtime return relationship`);
+            dropped += 1;
+            continue;
+          }
+          actions.push({ kind: "return", edgeId: edge.id });
+          break;
+        }
+        case "traverse": {
+          const edgeId = edgeAliases.get(action.edgeId) ?? edgeAliases.get(slug(action.edgeId));
+          const edge = edgeId ? byEdgeId.get(edgeId) : undefined;
+          if (!edge || !isRuntimeKind(edge.kind)) {
+            failures.push(`scene ${raw.id} attempts to animate a missing or non-runtime relationship`);
+            dropped += 1;
+            continue;
+          }
+          actions.push({ kind: "traverse", edgeId: edge.id });
+          break;
+        }
+        case "fork":
+        case "join": {
+          const branches = action.branchSceneIds.map(resolveSceneId);
+          if (branches.some((id) => !id)) {
+            failures.push(`scene ${raw.id} references a missing scene in its ${action.kind}`);
+            dropped += 1;
+            continue;
+          }
+          actions.push({ ...action, branchSceneIds: branches.filter((id): id is string => id !== null) });
+          break;
+        }
+        case "outcome": actions.push(action); break;
       }
     }
-    let id = slug(raw.id || raw.title) || "step";
-    while (stepIds.has(id)) id = `${id}-${flow.length + 1}`;
-    stepIds.add(id);
-    flow.push({
-      id,
-      moduleId,
-      edgeId,
-      title: firstWords(raw.title ?? "", 4),
-      text: raw.text ?? "",
+
+    if (actions.length === 0) {
+      actions.push({
+        kind: "outcome",
+        result: "partial",
+        text: "This scene has no verified action, so playback shows no execution transition.",
+      });
+    }
+
+    const evidence = raw.evidence.flatMap((item) => {
+      const moduleId = resolveModuleId(item.moduleId);
+      if (!moduleId) {
+        failures.push(`scene ${raw.id} cites evidence for a missing or ambiguous module`);
+        dropped += 1;
+        return [];
+      }
+      const evidenceModule = byModuleId.get(moduleId);
+      const file = repo.files.get(item.path);
+      if (!evidenceModule || !file || !evidenceModule.files.includes(item.path) || !snippetAppears(file, item.snippet)) {
+        failures.push(`scene ${raw.id} cites evidence that is missing, outside its module, or not verbatim`);
+        dropped += 1;
+        return [];
+      }
+      return [{ ...item, moduleId, snippet: item.snippet.trim() }];
     });
-    if (flow.length >= 8) break;
+    if (evidence.length === 0) failures.push(`scene ${raw.id} has no valid source evidence`);
+
+    const dependsOn = raw.dependsOn.flatMap((dependency) => {
+      const id = resolveSceneId(dependency);
+      if (!id || id === sceneId) {
+        failures.push(`scene ${raw.id} depends on a missing or invalid scene`);
+        dropped += 1;
+        return [];
+      }
+      return [id];
+    });
+    scenes.push({
+      ...raw,
+      id: sceneId,
+      title: firstWords(raw.title, 8),
+      caption: raw.caption.trim(),
+      dependsOn: [...new Set(dependsOn)],
+      actions,
+      evidence,
+    });
   }
 
-  const summary = (core.summary ?? []).filter((s) => typeof s === "string" && s.trim()).slice(0, 8);
-  const stack = [...new Set((core.stack ?? []).filter((s) => typeof s === "string" && s.trim()))].slice(0, 12);
+  const bySceneId = new Map(scenes.map((scene) => [scene.id, scene]));
+  for (const scene of scenes) {
+    for (const action of scene.actions) {
+      if (action.kind !== "traverse" && action.kind !== "return" && action.kind !== "spawn") continue;
+      const edge = byEdgeId.get(action.edgeId);
+      if (!edge || !scene.evidence.some((item) => item.path === edge.evidence.path && item.snippet === edge.evidence.snippet)) {
+        failures.push(`scene ${scene.id} does not cite the exact source line for its ${action.kind} relationship`);
+      }
+    }
+  }
+  const contextOnly = core.story.contextOnly.flatMap((item) => {
+    const moduleId = resolveModuleId(item.moduleId);
+    if (!moduleId || !byModuleId.has(moduleId) || !item.reason.trim()) {
+      failures.push(`context-only declaration for ${item.moduleId} is missing its module or reason`);
+      dropped += 1;
+      return [];
+    }
+    return [{ moduleId, reason: item.reason.trim() }];
+  });
 
-  const interview = {
-    pitch: core.interview?.pitch ?? "",
-    tradeoffs: (core.interview?.tradeoffs ?? []).filter(Boolean).slice(0, 5),
-    questions: (core.interview?.questions ?? [])
-      .filter((q) => q && typeof q.q === "string" && typeof q.a === "string")
-      .slice(0, 8),
+  const visitedModules = new Set<string>();
+  const deferredSpawns: { sceneId: string; schedulerSceneId: string; afterSceneId: string; afterResponse: boolean; moduleId: string; edgeId: string }[] = [];
+  let hasOutcome = false;
+  for (const scene of scenes) {
+    for (const action of scene.actions) {
+      if (action.kind === "traverse" || action.kind === "return" || action.kind === "spawn") {
+        const edge = byEdgeId.get(action.edgeId);
+        if (edge) {
+          visitedModules.add(edge.from);
+          visitedModules.add(edge.to);
+        }
+      } else {
+        for (const id of idsForAction(action)) visitedModules.add(id);
+      }
+      if (action.kind === "spawn") {
+        deferredSpawns.push({
+          sceneId: action.sceneId,
+          schedulerSceneId: scene.id,
+          afterSceneId: action.afterSceneId,
+          afterResponse: action.afterResponse,
+          moduleId: action.moduleId,
+          edgeId: action.edgeId,
+        });
+      }
+      if (action.kind === "outcome") hasOutcome = true;
+      if (action.kind === "fork") {
+        const branches = action.branchSceneIds.flatMap((id) => {
+          const branch = bySceneId.get(id);
+          return branch ? [branch] : [];
+        });
+        const groups = new Set(branches.map((branch) => branch.parallelGroup ?? ""));
+        if (action.mode === "independent" && (groups.size !== 1 || groups.has(""))) {
+          failures.push(`independent fork in ${scene.id} does not use one shared parallel group`);
+        }
+        if (action.mode === "exclusive" && branches.some((branch) => branch.parallelGroup)) {
+          failures.push(`exclusive fork in ${scene.id} is incorrectly labeled as parallel work`);
+        }
+        for (const branchId of action.branchSceneIds) {
+          const branch = bySceneId.get(branchId);
+          if (!branch || !branch.dependsOn.includes(scene.id)) {
+            failures.push(`fork in ${scene.id} does not point to branches triggered by that scene`);
+          } else if (branch.branchMode !== action.mode) {
+            failures.push(`branch ${branch.id} does not identify the ${action.mode} semantics of its fork`);
+          }
+        }
+      }
+      if (action.kind === "join") {
+        if (!action.branchSceneIds.every((id) => scene.dependsOn.includes(id))) {
+          failures.push(`join in ${scene.id} does not depend on every joined branch`);
+        }
+      }
+    }
+  }
+
+  for (const scene of scenes) {
+    if (!scene.branchMode) continue;
+    const declaredByFork = scenes.some((parent) => parent.actions.some((action) =>
+      action.kind === "fork" && action.mode === scene.branchMode && action.branchSceneIds.includes(scene.id),
+    ));
+    if (!declaredByFork) failures.push(`scene ${scene.id} declares branch semantics without a matching fork`);
+  }
+
+  const deferredScenes = scenes.filter((scene) => scene.kind === "deferred");
+  const dependsOnScene = (sceneId: string, targetId: string, seen = new Set<string>()): boolean => {
+    if (sceneId === targetId) return true;
+    if (seen.has(sceneId)) return false;
+    seen.add(sceneId);
+    const scene = bySceneId.get(sceneId);
+    return scene?.dependsOn.some((dependency) => dependsOnScene(dependency, targetId, seen)) ?? false;
   };
+  const invalidSpawns = new Set<string>();
+  for (const spawn of deferredSpawns) {
+    const target = bySceneId.get(spawn.sceneId);
+    const edge = byEdgeId.get(spawn.edgeId);
+    const targetModules = new Set(target?.actions.flatMap(idsForAction) ?? []);
+    const response = bySceneId.get(spawn.afterSceneId);
+    const hasResponse = response?.actions.some((action) => action.kind === "return" || (action.kind === "outcome" && action.result === "success"));
+    const targetIsConnected = target?.kind === "deferred" && edge?.from === spawn.moduleId && targetModules.has(edge.to);
+    const timingIsConnected = spawn.afterResponse && hasResponse &&
+      dependsOnScene(spawn.sceneId, spawn.schedulerSceneId) && dependsOnScene(spawn.sceneId, spawn.afterSceneId);
+    if (targetIsConnected && timingIsConnected) continue;
 
-  const analysis: AnalysisCore = AnalysisCore.parse({
+    failures.push(`spawn action in ${spawn.schedulerSceneId} does not connect to a deferred scene after the response`);
+    invalidSpawns.add(spawn.sceneId);
+    const scheduler = bySceneId.get(spawn.schedulerSceneId);
+    if (scheduler) {
+      scheduler.actions = scheduler.actions.filter((action) =>
+        action.kind !== "spawn" || action.sceneId !== spawn.sceneId || action.edgeId !== spawn.edgeId,
+      );
+      if (scheduler.actions.length === 0) {
+        scheduler.actions.push({ kind: "outcome", result: "partial", text: "The deferred transition could not be verified and is not animated." });
+      }
+    }
+  }
+  for (const scene of deferredScenes) {
+    if (!deferredSpawns.some((spawn) => {
+      if (invalidSpawns.has(spawn.sceneId) || !dependsOnScene(scene.id, spawn.sceneId) || !dependsOnScene(scene.id, spawn.schedulerSceneId) || !dependsOnScene(scene.id, spawn.afterSceneId)) return false;
+      const response = bySceneId.get(spawn.afterSceneId);
+      const hasResponse = response?.actions.some((action) => action.kind === "return" || (action.kind === "outcome" && action.result === "success"));
+      return spawn.afterResponse && hasResponse;
+    })) {
+      failures.push(`deferred scene ${scene.id} lacks a source scene that schedules it after the response`);
+      scene.unverified = "After-response scheduling is unverified; no scheduling transition is animated.";
+      scene.caption = `${scene.unverified} ${scene.caption}`;
+    }
+  }
+
+  visitedModules.clear();
+  for (const scene of scenes) {
+    for (const action of scene.actions) {
+      if (action.kind === "traverse" || action.kind === "return" || action.kind === "spawn") {
+        const edge = byEdgeId.get(action.edgeId);
+        if (edge) {
+          visitedModules.add(edge.from);
+          visitedModules.add(edge.to);
+        }
+      } else {
+        for (const id of idsForAction(action)) visitedModules.add(id);
+      }
+    }
+  }
+  const contextIds = new Set(contextOnly.map((item) => item.moduleId));
+  for (const id of contextIds) {
+    if (visitedModules.has(id)) failures.push(`module ${id} is both executed and marked context-only`);
+  }
+  for (const item of modules) {
+    if (!visitedModules.has(item.id) && !contextIds.has(item.id)) {
+      failures.push(`module ${item.id} is neither visited by the story nor declared context-only`);
+    }
+  }
+  const declaredDeferred = new Set(core.story.completion.deferredSceneIds.flatMap((id) => {
+    const resolved = resolveSceneId(id);
+    if (!resolved) failures.push(`completion references deferred scene ${id}, which does not exist`);
+    return resolved ? [resolved] : [];
+  }));
+  for (const scene of deferredScenes) {
+    if (!declaredDeferred.has(scene.id)) failures.push(`deferred scene ${scene.id} is missing from the declared completion summary`);
+  }
+  if (declaredDeferred.size !== deferredScenes.length) failures.push("completion lists deferred work that is not marked as a deferred scene");
+  if (!hasOutcome) failures.push("story has no declared terminal outcome action");
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visitDependency = (id: string): boolean => {
+    if (visiting.has(id)) return false;
+    if (visited.has(id)) return true;
+    const scene = bySceneId.get(id);
+    if (!scene) return false;
+    visiting.add(id);
+    for (const dependency of scene.dependsOn) {
+      if (!visitDependency(dependency)) return false;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return true;
+  };
+  for (const scene of scenes) {
+    if (!visitDependency(scene.id)) failures.push(`story dependencies contain a cycle near ${scene.id}`);
+  }
+
+  const parallelGroups = new Map<string, StoryScene[]>();
+  for (const scene of scenes) {
+    if (!scene.parallelGroup) continue;
+    const group = parallelGroups.get(scene.parallelGroup) ?? [];
+    group.push(scene);
+    parallelGroups.set(scene.parallelGroup, group);
+  }
+  for (const [groupName, group] of parallelGroups) {
+    const first = group[0];
+    if (!first) continue;
+    const expected = [...first.dependsOn].sort().join("\u0000");
+    for (const scene of group) {
+      if ([...scene.dependsOn].sort().join("\u0000") !== expected || group.some((other) => scene.dependsOn.includes(other.id))) {
+        failures.push(`parallel group ${groupName} incorrectly orders independent scenes`);
+        break;
+      }
+    }
+  }
+
+  const story: Story = {
+    scenes,
+    contextOnly: [...new Map(contextOnly.map((item) => [item.moduleId, item])).values()],
+    completion: {
+      ...core.story.completion,
+      deferredSceneIds: [...declaredDeferred],
+      status: failures.length ? "partial" : core.story.completion.status,
+    },
+  };
+  if (story.completion.status === "success" && failures.length > 0) story.completion.status = "partial";
+
+  const summary = core.summary.filter((item) => item.trim());
+  const stack = [...new Set(core.stack.filter((item) => item.trim()))];
+  const analysis = AnalysisCore.parse({
     meta: {
       repo: repo.repo,
       sha: repo.sha,
-      title: core.meta?.title?.trim() || repo.repo,
+      title: core.meta.title.trim() || repo.repo,
       generatedAt: new Date().toISOString(),
+      generatorVersion: GENERATOR_VERSION,
+      storyVersion: STORY_SCHEMA_VERSION,
     },
-    summary: summary.length ? summary : fallbackSummary(limited, repo.repo),
+    summary: summary.length ? summary : fallbackSummary(modules, repo.repo),
     stack,
-    modules: limited,
-    edges: completeEdges,
-    flow,
-    interview,
+    modules,
+    edges,
+    story,
+    interview: {
+      pitch: core.interview.pitch,
+      tradeoffs: core.interview.tradeoffs.filter(Boolean),
+      questions: core.interview.questions.filter((question) => question.q.trim() && question.a.trim()),
+    },
   });
 
-  const connected = new Set(analysis.edges.flatMap((e) => [e.from, e.to]));
-  const isolated = analysis.modules.filter((m) => !connected.has(m.id)).length;
-  const sparse = analysis.modules.length >= 6 && isolated > analysis.modules.length / 2;
+  const linkedModules = new Set(analysis.edges.flatMap((edge) => [edge.from, edge.to]));
+  const isolated = analysis.modules.filter((item) => !linkedModules.has(item.id)).length;
+  const sparse = analysis.modules.length >= 4 && isolated > analysis.modules.length / 2;
   if (sparse) {
-    // Surface this first so the bounded second agent pass sees it even when
-    // there are many individual validation failures.
-    failures.unshift(
-      `The architecture has ${isolated} disconnected modules out of ${analysis.modules.length}. Revisit the actual request path, select fewer relevant modules, and verify more relationships from source. Do not invent edges.`,
-    );
+    failures.unshift(`The graph has ${isolated} disconnected modules out of ${analysis.modules.length}. Revisit the selected operation, remove irrelevant modules or mark them context-only, and cite only real relationships.`);
+    analysis.story.completion.status = "partial";
   }
 
-  const essential = analysis.modules.length === 0 || analysis.edges.length === 0 || sparse;
-
-  return { analysis, failures, dropped, repaired, essential };
+  return {
+    analysis,
+    failures,
+    dropped,
+    repaired,
+    essential: analysis.modules.length === 0 || analysis.edges.length === 0 || sparse || failures.length > 0 || analysis.story.completion.status !== "success",
+  };
 }

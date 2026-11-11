@@ -1,4 +1,4 @@
-import type { Module } from "@/lib/schema";
+import type { Edge, Module } from "@/lib/schema";
 
 export type FileInfo = { path: string; language: string; lines: number };
 export type Link = { from: string; to: string; specifier: string };
@@ -542,7 +542,7 @@ export function scan(repo: string, sha: string, files: Map<string, string>): Fac
 }
 
 /** A compact, readable dump of the fact sheet for the model. */
-export function factSheetText(facts: FactSheet, maxFiles = 260): string {
+export function factSheetText(facts: FactSheet, maxFiles = 400): string {
   const lines: string[] = [];
   lines.push(`REPOSITORY ${facts.repo} @ ${facts.sha.slice(0, 12)}`);
 
@@ -641,6 +641,7 @@ export function supportsLink(
   toModule: Module | undefined,
   evidencePath: string,
   evidenceSnippet: string,
+  kind?: Edge["kind"],
 ): boolean {
   if (!fromFiles.includes(evidencePath)) return false;
   const toSet = new Set(toFiles);
@@ -649,6 +650,19 @@ export function supportsLink(
     if (link.from === evidencePath && toSet.has(link.to) && evidenceSnippet.includes(link.specifier)) {
       return true;
     }
+  }
+
+  if (kind === "call" || kind === "event" || kind === "data") {
+    const calls = facts.calls[evidencePath] ?? [];
+    const targetSymbols = toFiles.flatMap((file) => facts.symbols[file] ?? []);
+    const invoked = calls.some((call) => {
+      const escaped = call.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${escaped}\\s*\\(`).test(evidenceSnippet);
+    });
+    if (invoked && targetSymbols.some((symbol) => {
+      const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${escaped}(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*\\s*\\(`).test(evidenceSnippet);
+    })) return true;
   }
 
   if (toModule?.kind === "external") {

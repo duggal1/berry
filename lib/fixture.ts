@@ -1,7 +1,7 @@
-import type { Analysis } from "./schema";
+import { fromLegacyAnalysis, GENERATOR_VERSION, STORY_SCHEMA_VERSION, type Analysis, type Story } from "./schema";
 const ev=(path:string,snippet:string)=>({path,snippet});
 const FENCE = "`".repeat(3);
-export const EXAMPLE:Analysis={meta:{repo:"example/orders-api",sha:"demo",title:"Orders API, as it runs",generatedAt:"2026-01-01T00:00:00Z"},summary:["Orders API takes order requests over HTTP, checks who is calling, and turns valid requests into saved orders.","The order logic is the center of the system: it writes to the orders database, charges the card through a payments client, and queues the shipping work.","A separate worker reads that queue, marks the order as shipped and sends a receipt by email.","Two outside services sit at the edges: a payment provider and an email provider.","One request travels from the HTTP layer through auth and order logic, then splits into a saved row, a charge and a queued job."],stack:["TypeScript","HTTP API","Job queue","SQL database"],modules:[
+const LEGACY_EXAMPLE=fromLegacyAnalysis({meta:{repo:"example/orders-api",sha:"demo",title:"Orders API, as it runs",generatedAt:"2026-01-01T00:00:00Z"},summary:["Orders API takes order requests over HTTP, checks who is calling, and turns valid requests into saved orders.","The order logic is the center of the system: it writes to the orders database, charges the card through a payments client, and queues the shipping work.","A separate worker reads that queue, marks the order as shipped and sends a receipt by email.","Two outside services sit at the edges: a payment provider and an email provider.","One request travels from the HTTP layer through auth and order logic, then splits into a saved row, a charge and a queued job."],stack:["TypeScript","HTTP API","Job queue","SQL database"],modules:[
 {id:"api",name:"HTTP API",role:"entry",kind:"service",purpose:"Receives order requests and validates them.",path:"src/api",files:["src/api/server.ts","src/api/routes.ts","src/api/validate.ts"],group:"",tech:"TypeScript"},
 {id:"auth",name:"Auth",role:"core",kind:"service",purpose:"Checks the caller's token before anything else runs.",path:"src/auth",files:["src/auth/verify.ts","src/auth/session.ts"],group:"",tech:"Node.js"},
 {id:"orders",name:"Order logic",role:"core",kind:"service",purpose:"Creates orders, charges them and queues fulfilment.",path:"src/orders",files:["src/orders/create.ts","src/orders/pricing.ts","src/orders/state.ts"],group:"",tech:"TypeScript"},
@@ -70,4 +70,148 @@ export const EXAMPLE:Analysis={meta:{repo:"example/orders-api",sha:"demo",title:
 FENCE+"ts",
 "createOrder(user, body, { idempotencyKey })",
 FENCE,
-].join("\n")};
+].join("\n")});
+
+const EXAMPLE_STORY: Story = {
+  scenes: [
+    {
+      id: "request-arrives",
+      title: "Request arrives",
+      caption: "The HTTP route receives a create-order request and prepares to verify the caller.",
+      kind: "spine",
+      dependsOn: [],
+      actions: [{ kind: "enter", moduleId: "api" }],
+      evidence: [{ moduleId: "api", path: "src/api/routes.ts", snippet: "const user = await verifyToken(req.headers.authorization);" }],
+    },
+    {
+      id: "authenticate-and-enter-core",
+      title: "Authenticate and enter order logic",
+      caption: "The route verifies the caller, returns to its handler, then invokes order creation.",
+      kind: "spine",
+      dependsOn: ["request-arrives"],
+      actions: [
+        { kind: "traverse", edgeId: "e1" },
+        { kind: "traverse", edgeId: "e2" },
+      ],
+      evidence: [
+        { moduleId: "api", path: "src/api/routes.ts", snippet: "const user = await verifyToken(req.headers.authorization);" },
+        { moduleId: "api", path: "src/api/routes.ts", snippet: "const order = await createOrder(user, body);" },
+      ],
+    },
+    {
+      id: "order-fanout",
+      title: "Order logic starts its effects",
+      caption: "Order logic coordinates persistence, payment and shipping work. This fixture does not claim an order among those outgoing effects.",
+      kind: "spine",
+      dependsOn: ["authenticate-and-enter-core"],
+      actions: [
+        { kind: "enter", moduleId: "orders" },
+        { kind: "fork", mode: "independent", branchSceneIds: ["save-order", "charge-payment", "queue-shipping"] },
+      ],
+      evidence: [{ moduleId: "orders", path: "src/orders/create.ts", snippet: "await db.insert(orders).values(draft);" }],
+    },
+    {
+      id: "save-order",
+      title: "Order is saved",
+      caption: "The order module inserts the draft into the order store.",
+      kind: "branch",
+      branchMode: "independent",
+      dependsOn: ["order-fanout"],
+      parallelGroup: "order-effects",
+      actions: [{ kind: "traverse", edgeId: "e3" }],
+      evidence: [{ moduleId: "orders", path: "src/orders/create.ts", snippet: "await db.insert(orders).values(draft);" }],
+    },
+    {
+      id: "charge-payment",
+      title: "Payment is requested",
+      caption: "The order module calls its payment client, which sends the charge to the provider.",
+      kind: "branch",
+      branchMode: "independent",
+      dependsOn: ["order-fanout"],
+      parallelGroup: "order-effects",
+      actions: [{ kind: "traverse", edgeId: "e4" }, { kind: "traverse", edgeId: "e5" }],
+      evidence: [
+        { moduleId: "orders", path: "src/orders/create.ts", snippet: "const paid = await charge(order.total, user.card);" },
+        { moduleId: "payments", path: "src/payments/charge.ts", snippet: "await provider.charges.create({ amount, source });" },
+      ],
+    },
+    {
+      id: "queue-shipping",
+      title: "Shipping is queued",
+      caption: "A ship job is added to the queue for a worker to process later.",
+      kind: "branch",
+      branchMode: "independent",
+      dependsOn: ["order-fanout"],
+      parallelGroup: "order-effects",
+      actions: [{ kind: "traverse", edgeId: "e6" }],
+      evidence: [{ moduleId: "orders", path: "src/orders/create.ts", snippet: "await queue.push({ type: 'ship', orderId: order.id });" }],
+    },
+    {
+      id: "worker-processes-shipping",
+      title: "Worker processes queued work",
+      caption: "The worker takes the queued job and then updates order state and sends a receipt.",
+      kind: "branch",
+      dependsOn: ["queue-shipping"],
+      actions: [{ kind: "enter", moduleId: "worker" }],
+      evidence: [{ moduleId: "worker", path: "src/worker/main.ts", snippet: "queue.consume('ship', handleShip);" }],
+    },
+    {
+      id: "worker-effects",
+      title: "Worker completes both effects",
+      caption: "After receiving the job, the worker marks the order shipped and sends the receipt.",
+      kind: "branch",
+      dependsOn: ["worker-processes-shipping"],
+      actions: [
+        { kind: "fork", mode: "independent", branchSceneIds: ["mark-shipped", "send-receipt"] },
+      ],
+      evidence: [{ moduleId: "worker", path: "src/worker/ship.ts", snippet: "await db.update(orders).set({ state: 'shipped' });" }],
+    },
+    {
+      id: "mark-shipped",
+      title: "Order is marked shipped",
+      caption: "The worker writes the shipped state to the order store.",
+      kind: "branch",
+      branchMode: "independent",
+      dependsOn: ["worker-effects"],
+      parallelGroup: "worker-effects",
+      actions: [{ kind: "traverse", edgeId: "e8" }],
+      evidence: [{ moduleId: "worker", path: "src/worker/ship.ts", snippet: "await db.update(orders).set({ state: 'shipped' });" }],
+    },
+    {
+      id: "send-receipt",
+      title: "Receipt is sent",
+      caption: "The worker sends an email through its mail client.",
+      kind: "branch",
+      branchMode: "independent",
+      dependsOn: ["worker-effects"],
+      parallelGroup: "worker-effects",
+      actions: [{ kind: "traverse", edgeId: "e9" }],
+      evidence: [{ moduleId: "worker", path: "src/worker/receipt.ts", snippet: "await mailer.send({ to: user.email, template: 'receipt' });" }],
+    },
+    {
+      id: "operation-outcome",
+      title: "Operation outcome",
+      caption: "The order effects and worker follow-up are shown, but this fixture does not establish exactly when the HTTP response returns.",
+      kind: "outcome",
+      dependsOn: ["order-fanout"],
+      actions: [{ kind: "outcome", result: "partial", text: "Response timing is not established by this fixture." }],
+      evidence: [{ moduleId: "orders", path: "src/orders/create.ts", snippet: "await db.insert(orders).values(draft);" }],
+    },
+  ],
+  contextOnly: [],
+  completion: {
+    status: "partial",
+    summary: "The example covers the graph's outgoing effects but its source excerpts do not establish the precise HTTP response timing.",
+    deferredSceneIds: [],
+  },
+};
+
+export const EXAMPLE: Analysis = {
+  ...LEGACY_EXAMPLE,
+  meta: {
+    ...LEGACY_EXAMPLE.meta,
+    generatorVersion: GENERATOR_VERSION,
+    storyVersion: STORY_SCHEMA_VERSION,
+  },
+  story: EXAMPLE_STORY,
+};

@@ -4,7 +4,7 @@ import { askRepo } from "@/lib/api";
 import type { Turn } from "@/lib/api";
 import { EASE_QUINT } from "@/lib/motion";
 import { slug } from "@/lib/repo";
-import type { Analysis, Step } from "@/lib/schema";
+import type { Analysis, Story } from "@/lib/schema";
 import { INK, ROLE } from "@/sketch/palette";
 import { Accordion } from "./Accordion";
 import { Composer } from "./Composer";
@@ -55,18 +55,20 @@ export function SummaryPane({
 }
 
 export function FlowPane({
-  flow,
+  story,
   step,
   go,
 }: {
-  flow: Step[];
+  story: Story;
   step: number;
   go: (i: number) => void;
 }) {
+  const sceneNames = new Map(story.scenes.map((scene) => [scene.id, scene.title]));
   return (
-    <ol className="flex flex-col gap-2">
-      {flow.map((s, i) => (
-        <li key={s.id}>
+    <div>
+      <ol className="flex flex-col gap-2">
+      {story.scenes.map((scene, i) => (
+        <li key={scene.id}>
           <button
             type="button"
             onClick={() => go(i)}
@@ -79,20 +81,55 @@ export function FlowPane({
             </span>
             <span>
               <span className="block text-[22px] font-semibold leading-[1.1] tracking-tight">
-                {s.title}
+                {scene.title}
               </span>
+              <span className="t-mono mt-1 block text-[11px] uppercase tracking-[0.12em] opacity-60">
+                {scene.branchMode === "exclusive"
+                  ? "alternative outcome"
+                  : scene.branchMode === "independent"
+                    ? "independent consequence"
+                    : scene.kind === "deferred"
+                      ? "after response"
+                      : scene.kind}
+              </span>
+              {scene.unverified && (
+                <span className="t-mono mt-1 block text-[11px] uppercase tracking-[0.12em] text-neutral-500">
+                  unverified transition
+                </span>
+              )}
               <span
                 className={`mt-1.5 block text-[16px] leading-[1.5] ${
                   i === step ? "text-neutral-300" : "text-neutral-600"
                 }`}
               >
-                {s.text}
+                {scene.caption}
               </span>
+              {scene.dependsOn.length > 0 && (
+                <span className="mt-2 block text-[13px] opacity-60">
+                  Triggered by {scene.dependsOn.map((id) => sceneNames.get(id) ?? id).join(" and ")}
+                </span>
+              )}
             </span>
           </button>
         </li>
       ))}
-    </ol>
+      </ol>
+      <p className="mt-6 max-w-3xl text-[15px] leading-[1.55] text-neutral-600">
+        {story.completion.status === "success" ? story.completion.summary : `Partial explanation: ${story.completion.summary}`}
+      </p>
+      {story.contextOnly.length > 0 && (
+        <section className="mt-10">
+          <h3 className="t-h3">Context only</h3>
+          <ul className="mt-4 flex flex-col gap-3">
+            {story.contextOnly.map((item) => (
+              <li key={item.moduleId} className="text-[15px] leading-[1.5] text-neutral-600">
+                <span className="font-medium text-neutral-900">{item.moduleId}</span> — {item.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 

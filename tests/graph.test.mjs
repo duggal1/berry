@@ -22,6 +22,30 @@ test("adds a verified import edge with the exact source line", () => {
   assert.deepEqual(result[0].evidence, { path: "app.ts", snippet: file });
 });
 
+test("recovers every source-backed edge in a branching graph", () => {
+  const sourceFiles = new Map();
+  const targetFiles = [];
+  const links = [];
+  const modules = [];
+  const sourceLines = [];
+  for (let i = 0; i < 10; i++) {
+    const targetPath = `targets/target-${i}.ts`;
+    const specifier = `./${targetPath}`;
+    sourceLines.push(`import { target${i} } from "${specifier}";`);
+    targetFiles.push(targetPath);
+    links.push({ from: "app.ts", to: targetPath, specifier });
+  }
+  sourceFiles.set("app.ts", sourceLines.join("\n"));
+  modules.push(makeModule("app", ["app.ts"]));
+  targetFiles.forEach((path, index) => {
+    sourceFiles.set(path, `export const target${index} = () => {};`);
+    modules.push(makeModule(`target-${index}`, [path]));
+  });
+
+  const result = recoverEdges(modules, [], facts({ links }), sourceFiles);
+  assert.equal(result.length, 10);
+});
+
 test("recovers a Swift constructor reference but labels it inferred", () => {
   const modules = [makeModule("watchdog", ["Watchdog.swift"]), makeModule("cleaner", ["Cleaner.swift"])];
   const result = recoverEdges(modules, [], facts({
@@ -62,7 +86,7 @@ test("does not guess relationships from symbols merely declared nearby", () => {
   assert.equal(result.length, 0);
 });
 
-test("promotes an inferred edge when a real import supports it without changing its ID", () => {
+test("keeps a runtime call separate from a resolved import between the same modules", () => {
   const original = [{
     id: "ai-edge", from: "app", to: "cleaner", kind: "call", label: "maybe calls",
     inferred: true, evidence: { path: "app.ts", snippet: "old" },
@@ -73,10 +97,11 @@ test("promotes an inferred edge when a real import supports it without changing 
     facts({ links: [{ from: "app.ts", to: "cleaner.ts", specifier: "./cleaner" }] }),
     new Map([["app.ts", 'import x from "./cleaner";']]),
   );
-  assert.equal(result.length, 1);
-  assert.equal(result[0].id, "ai-edge");
-  assert.equal(result[0].inferred, false);
-  assert.equal(result[0].kind, "import");
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.map((edge) => [edge.id, edge.kind, edge.inferred]), [
+    ["ai-edge", "call", true],
+    ["source-app-cleaner", "import", false],
+  ]);
 });
 
 test("rejects source excerpts longer than the evidence limit", () => {

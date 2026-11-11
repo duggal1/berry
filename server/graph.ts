@@ -1,8 +1,7 @@
 import type { Edge, Module } from "@/lib/schema";
 import type { FactSheet } from "./scan";
 
-const MAX_DERIVED_EDGES = 28;
-const keyOf = (from: string, to: string) => `${from}\u0000${to}`;
+const keyOf = (from: string, to: string, kind: Edge["kind"]) => `${from}\u0000${to}\u0000${kind}`;
 const idPart = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-+$/g, "").slice(0, 35);
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -37,23 +36,21 @@ export function recoverEdges(
   }
 
   const result = original.slice();
-  const positions = new Map(result.map((e, i) => [keyOf(e.from, e.to), i]));
+  const positions = new Map(result.map((e, i) => [keyOf(e.from, e.to, e.kind), i]));
   const ids = new Set(result.map((e) => e.id));
-  let added = 0;
 
   const add = (from: string | null | undefined, to: string | null | undefined, kind: Edge["kind"], label: string, inferred: boolean, path: string, snippet: string | null) => {
     if (!from || !to || from === to || !snippet) return;
-    const pair = keyOf(from, to);
+    const pair = keyOf(from, to, kind);
     const position = positions.get(pair);
     if (position !== undefined) {
-      // Keep the AI edge ID so existing flow steps still resolve.
+      // Keep the AI edge ID so existing storyboard references still resolve.
       const previous = result[position];
       if (previous.inferred && !inferred) result[position] = {
         ...previous, kind, label, inferred: false, evidence: { path, snippet },
       };
       return;
     }
-    if (added >= MAX_DERIVED_EDGES) return;
     const base = `source-${idPart(from)}-${idPart(to)}`;
     let id = base;
     let n = 2;
@@ -61,7 +58,6 @@ export function recoverEdges(
     result.push({ id, from, to, kind, label, inferred, evidence: { path, snippet } });
     ids.add(id);
     positions.set(pair, result.length - 1);
-    added += 1;
   };
 
   // A resolved local import provides a strong file-to-file dependency edge.

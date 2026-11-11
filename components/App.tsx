@@ -32,13 +32,15 @@ function Message({ title, body }: { title: string; body: string }): ReactNode {
 function RunInner({
   url,
   token,
+  preserveExisting,
   onRetry,
 }: {
   url: string;
   token: string | null;
+  preserveExisting: boolean;
   onRetry: () => void;
 }) {
-  const run = useAnalysisRun(url, token);
+  const run = useAnalysisRun(url, token, preserveExisting);
   const has = run.analysis !== null && run.status !== "error";
   return (
     <>
@@ -58,13 +60,14 @@ function RunInner({
   );
 }
 
-function RunView({ url, token }: { url: string; token: string | null }) {
+function RunView({ url, token, preserveExisting }: { url: string; token: string | null; preserveExisting: boolean }) {
   const [attempt, setAttempt] = useState(0);
   return (
     <RunInner
       key={`${url}:${attempt}`}
       url={url}
       token={token}
+      preserveExisting={preserveExisting}
       onRetry={() => setAttempt((a) => a + 1)}
     />
   );
@@ -83,7 +86,15 @@ function LocalView({ id }: { id: string }) {
   }, [id]);
   if (a === undefined) return <main className="min-h-screen" aria-busy />;
   if (!a) return <Message title="Not found." body="This analysis is not saved in this browser." />;
-  return <Workspace analysis={a} />;
+  return (
+    <Workspace
+      analysis={a}
+      onReanalyze={() => {
+        const url = `https://github.com/${a.meta.repo}/tree/${a.meta.sha}`;
+        location.hash = `#/run/${encodeURIComponent(url)}?save=new`;
+      }}
+    />
+  );
 }
 
 function SharedView({ id }: { id: string }) {
@@ -133,7 +144,7 @@ export default function App() {
       <Header route={route} />
       {route.name === "home" && <Home onStart={start} />}
       {route.name === "example" && <Workspace analysis={EXAMPLE} demo />}
-      {route.name === "run" && <RunView url={route.url} token={token} />}
+      {route.name === "run" && <RunView url={route.url} token={token} preserveExisting={route.preserveExisting} />}
       {route.name === "local" && <LocalView key={route.id} id={route.id} />}
       {route.name === "shared" && <SharedView key={route.id} id={route.id} />}
     </>

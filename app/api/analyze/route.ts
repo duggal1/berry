@@ -147,8 +147,8 @@ export async function POST(req: Request) {
     const isolated = checked.analysis.modules.filter((m) => !linkedIds.has(m.id)).length;
     send("stage", {
       id: "verify",
-      label: "Architecture checked",
-      detail: `${verifiedLinks} verified links, ${checked.analysis.edges.length - verifiedLinks} inferred, ${isolated} unconnected modules.`,
+      label: checked.analysis.story.completion.status === "success" ? "Story validated" : "Story is partial",
+      detail: `${checked.analysis.story.scenes.length} scenes, ${verifiedLinks} supported links, ${checked.analysis.edges.length - verifiedLinks} inferred links, ${checked.analysis.story.contextOnly.length} context-only modules, ${isolated} unconnected modules. ${checked.failures.length ? `${checked.failures.length} validation issues remain.` : checked.analysis.story.completion.summary}`,
     });
 
     send("analysis", checked.analysis);

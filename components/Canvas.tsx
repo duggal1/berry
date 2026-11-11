@@ -3,8 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { PointerEvent as RPointerEvent, ReactNode } from "react";
 
 const MIN_K = 0.04;
-const MAX_K = 8;
+const MAX_K = 16;
 const clampK = (k: number) => Math.min(MAX_K, Math.max(MIN_K, k));
+
+export type FocusRegion = { x: number; y: number; w: number; h: number };
 
 /**
  * A real canvas: the sketch keeps its natural size and the viewport pans, zooms and
@@ -15,6 +17,10 @@ export function Canvas({
   w,
   h,
   title,
+  focusRegion,
+  focusKey = 0,
+  focusResetKey = 0,
+  reducedMotion = false,
   height = "min(62vh, 640px)",
   zoomOnWheel = false,
   toolbar,
@@ -24,6 +30,10 @@ export function Canvas({
   w: number;
   h: number;
   title: string;
+  focusRegion?: FocusRegion | null;
+  focusKey?: number;
+  focusResetKey?: number;
+  reducedMotion?: boolean;
   height?: string;
   zoomOnWheel?: boolean;
   toolbar?: ReactNode;
@@ -40,10 +50,12 @@ export function Canvas({
     moved: boolean;
   } | null>(null);
   const touched = useRef(false);
+  const lastFocusReset = useRef(focusResetKey);
   const panFrame = useRef(0);
   const pendingPan = useRef<{ x: number; y: number } | null>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [grabbing, setGrabbing] = useState(false);
+  const [autoFocus, setAutoFocus] = useState(false);
 
   const fit = useCallback((showAll = false) => {
     const el = box.current;
@@ -51,7 +63,8 @@ export function Canvas({
     const cw = el.clientWidth;
     const ch = el.clientHeight;
     if (!cw || !ch) return;
-    const fullScale = clampK(Math.min(cw / w, ch / h) * 0.94);
+    setAutoFocus(false);
+    const fullScale = clampK(Math.min(cw / w, ch / h) * 0.97);
     // At phone widths, a full-graph fit can reduce text to unreadable pixels.
     // Start at a readable scale; the existing percent control still fits all.
     const k = !showAll && cw < 640 ? Math.max(fullScale, 0.55) : fullScale;
@@ -80,12 +93,37 @@ export function Canvas({
   }, [fit]);
 
   useEffect(() => {
+    if (lastFocusReset.current !== focusResetKey) {
+      lastFocusReset.current = focusResetKey;
+      touched.current = false;
+    }
+    if (!focusRegion || touched.current) return;
+    const el = box.current;
+    if (!el || !el.clientWidth || !el.clientHeight) return;
+    const padding = 56;
+    const region = {
+      x: Math.max(0, focusRegion.x - padding),
+      y: Math.max(0, focusRegion.y - padding),
+      w: Math.min(w, focusRegion.w + padding * 2),
+      h: Math.min(h, focusRegion.h + padding * 2),
+    };
+    const k = clampK(Math.min(el.clientWidth / region.w, el.clientHeight / region.h) * 0.82);
+    setView({
+      x: el.clientWidth / 2 - (region.x + region.w / 2) * k,
+      y: el.clientHeight / 2 - (region.y + region.h / 2) * k,
+      k,
+    });
+    setAutoFocus(true);
+  }, [focusKey, focusRegion, focusResetKey, h, w]);
+
+  useEffect(() => {
     const el = box.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!zoomOnWheel && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       touched.current = true;
+      setAutoFocus(false);
       const r = el.getBoundingClientRect();
       const px = e.clientX - r.left;
       const py = e.clientY - r.top;
@@ -106,6 +144,7 @@ export function Canvas({
     const el = box.current;
     if (!el) return;
     touched.current = true;
+    setAutoFocus(false);
     const cx = el.clientWidth / 2;
     const cy = el.clientHeight / 2;
     setView((v) => {
@@ -143,6 +182,7 @@ export function Canvas({
     if (!d.moved && Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     if (d.moved) {
       touched.current = true;
+      setAutoFocus(false);
       queuePan(d.ox + dx, d.oy + dy);
     }
   }
@@ -171,9 +211,12 @@ export function Canvas({
       onPointerUp={up}
       onPointerCancel={up}
       onKeyDown={(e) => {
-        if (e.key === "+" || e.key === "=") zoomBy(1.25);
-        else if (e.key === "-") zoomBy(1 / 1.25);
-        else if (e.key === "0") fit(true);
+        if (e.key === "+" || e.key === "=") zoomBy(1.2);
+        else if (e.key === "-") zoomBy(1 / 1.2);
+        else if (e.key === "0") {
+          touched.current = false;
+          fit(true);
+        }
       }}
       className="relative w-full touch-pan-y select-none overflow-hidden outline-none md:touch-none"
       style={{ height, cursor: grabbing ? "grabbing" : "grab" }}
@@ -185,6 +228,7 @@ export function Canvas({
           height: h,
           transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.k})`,
           transformOrigin: "0 0",
+          transition: autoFocus && !reducedMotion ? "transform 240ms ease-out" : "none",
         }}
       >
         <svg
@@ -207,71 +251,36 @@ export function Canvas({
 
       <div
         data-canvas-ui
-        className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1 bg-white/90 px-2 py-1.5 backdrop-blur-[2px] md:bottom-5 md:right-6"
+        className="absolute bottom-4 right-4 z-10 flex items-center gap-0.5 bg-white/90 px-1 py-1 backdrop-blur-[2px] md:bottom-5 md:right-6"
       >
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => zoomBy(view.k > 1 ? 1 / 1.2 : 1 / 1.5)}
-            className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-          >
-            −
-          </button>
-          <label className="flex items-center">
-            <span className="sr-only">Zoom percentage</span>
-            <input
-              type="number"
-              min={Math.round(MIN_K * 100)}
-              max={Math.round(MAX_K * 100)}
-              step="1"
-              value={Math.round(view.k * 100)}
-              aria-label="Zoom percentage"
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (!Number.isFinite(v)) return;
-                touched.current = true;
-                setView((prev) => ({ ...prev, k: clampK(v / 100) }));
-              }}
-              className="min-w-[4ch] bg-transparent px-1 text-center text-[12px] font-medium tabular-nums text-neutral-500 outline-none"
-            />
-            <span className="text-[12px] font-medium tabular-nums text-neutral-500">%</span>
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              touched.current = false;
-              fit(true);
-            }}
-            className="min-w-[3ch] px-1 text-center text-[11px] font-medium tabular-nums text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-            aria-label="Fit the whole sketch"
-            title="Fit entire sketch"
-          >
-            fit
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => zoomBy(view.k < 1 ? 1.5 : 1.2)}
-            className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-          >
-            +
-          </button>
-        </div>
-        <input
-          type="range"
-          min={MIN_K}
-          max={MAX_K}
-          step="0.01"
-          value={view.k}
-          aria-label="Zoom level"
-          onChange={(e) => {
-            touched.current = true;
-            const k = clampK(Number(e.target.value));
-            setView((v) => ({ ...v, k }));
+        <button
+          type="button"
+          aria-label="Zoom out"
+          onClick={() => zoomBy(1 / 1.2)}
+          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            touched.current = false;
+            setAutoFocus(false);
+            fit(true);
           }}
-          className="h-1 w-full cursor-pointer accent-neutral-950"
-        />
+          className="min-w-11 px-1 text-center text-[12px] font-medium tabular-nums text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+          aria-label="Fit the whole sketch"
+        >
+          {Math.round(view.k * 100)}%
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          onClick={() => zoomBy(1.2)}
+          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+        >
+          +
+        </button>
       </div>
     </div>
   );

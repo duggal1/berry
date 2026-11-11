@@ -1,4 +1,4 @@
-import { Stored } from "./schema";
+import { GENERATOR_VERSION, STORY_SCHEMA_VERSION, Stored } from "./schema";
 import type { Analysis } from "./schema";
 
 const DB_NAME = "berry";
@@ -63,11 +63,25 @@ function run<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
 
 export const idFor = (a: Analysis) => `${a.meta.repo.replace("/", "~")}~${a.meta.sha.slice(0, 7)}`;
 
-export async function saveAnalysis(a: Analysis): Promise<Stored> {
+function versionedIdFor(a: Analysis): string {
+  const generated = Date.parse(a.meta.generatedAt);
+  const suffix = Number.isFinite(generated) ? generated.toString(36) : Date.now().toString(36);
+  return `${idFor(a)}~story-${a.meta.storyVersion}-${suffix}`;
+}
+
+export async function saveAnalysis(a: Analysis, options: { preserveExisting?: boolean } = {}): Promise<Stored> {
   await migrate();
-  const rec = { ...a, id: idFor(a), savedAt: Date.now() };
+  const canonicalId = idFor(a);
+  const current = Stored.safeParse(await run("readonly", (s) => s.get(canonicalId)));
+  const isNewer = current.success && (
+    current.data.meta.storyVersion < STORY_SCHEMA_VERSION ||
+    current.data.meta.generatorVersion !== GENERATOR_VERSION
+  );
+  const id = options.preserveExisting || isNewer ? versionedIdFor(a) : canonicalId;
+  const rec = { ...a, id, savedAt: Date.now() };
   await run("readwrite", (s) => s.put(rec));
-  return rec;
+  const parsed = Stored.parse(rec);
+  return parsed;
 }
 
 export async function listAnalyses(): Promise<Stored[]> {

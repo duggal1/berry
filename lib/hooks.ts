@@ -1,26 +1,39 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { analyzeRepo } from "./api";
 import { saveAnalysis } from "./store";
-import type { Analysis, AnalysisCore, Stage, TraceItem } from "./schema";
+import type { Analysis, AnalysisCore, Stage, Story, TraceItem } from "./schema";
+import { INITIAL_TIMELINE, reduceTimeline } from "./timeline";
 
 export type Route =
   | { name: "home" }
   | { name: "example" }
-  | { name: "run"; url: string }
+  | { name: "run"; url: string; preserveExisting: boolean }
   | { name: "local"; id: string }
   | { name: "shared"; id: string };
 
 function parse(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const a = parts[0] ?? "";
+  const rawArg = parts[1] ?? "";
   let arg = "";
   try {
-    arg = parts[1] ? decodeURIComponent(parts[1]) : "";
+    arg = rawArg ? decodeURIComponent(rawArg) : "";
   } catch {
     arg = "";
   }
   if (a === "example") return { name: "example" };
-  if (a === "run" && arg) return { name: "run", url: arg };
+  if (a === "run" && rawArg) {
+    const split = rawArg.indexOf("?");
+    const routeArg = split < 0 ? rawArg : rawArg.slice(0, split);
+    const query = split < 0 ? "" : rawArg.slice(split + 1);
+    let url = "";
+    try {
+      url = decodeURIComponent(routeArg);
+    } catch {
+      return { name: "home" };
+    }
+    return { name: "run", url, preserveExisting: new URLSearchParams(query).get("save") === "new" };
+  }
   if (a === "r" && arg) return { name: "local", id: arg };
   if (a === "s" && arg) return { name: "shared", id: arg };
   return { name: "home" };
@@ -69,47 +82,65 @@ export function useInViewOnce<T extends Element>(margin = "-10% 0px") {
   return [ref, seen] as const;
 }
 
-export function useTrace(n: number) {
-  const [step, setStep] = useState(-1);
-  const [playing, setPlaying] = useState(false);
+export function useTrace(story: Story) {
+  const scenes = story.scenes;
+  const [timeline, dispatch] = useReducer(reduceTimeline, INITIAL_TIMELINE);
+  const [durations, setDurations] = useState<Record<string, number>>({});
+  const [cameraResetKey, setCameraResetKey] = useState(0);
+  const setDuration = useCallback((id: string, durationMs: number) => {
+    setDurations((current) => current[id] === durationMs ? current : { ...current, [id]: durationMs });
+  }, []);
 
   useEffect(() => {
-    if (!playing) return;
-    if (step >= n - 1) {
-      const stop = setTimeout(() => setPlaying(false), 0);
-      return () => clearTimeout(stop);
-    }
-    const t = setTimeout(() => setStep((s) => s + 1), 3000);
-    return () => clearTimeout(t);
-  }, [playing, step, n]);
+    const scene = scenes[timeline.sceneIndex];
+    const duration = scene ? durations[scene.id] : undefined;
+    if (!timeline.playing || !scene || !duration) return;
+
+    let frame = 0;
+    const tick = (now: number) => {
+      dispatch({ type: "tick", sceneCount: scenes.length, durationMs: duration, now });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [durations, scenes, timeline.playing, timeline.sceneIndex]);
+
+  const seek = (index: number) => {
+    dispatch({ type: "seek", sceneCount: scenes.length, sceneIndex: index });
+    if (index < 0) setCameraResetKey((current) => current + 1);
+  };
+
+  const adjust = (delta: number) => seek(timeline.sceneIndex + delta);
 
   return {
-    step,
-    playing,
-    go: (i: number) => {
-      setPlaying(false);
-      setStep(Math.max(-1, Math.min(n - 1, i)));
+    step: timeline.sceneIndex,
+    playing: timeline.playing,
+    progress: timeline.progress,
+    cameraResetKey,
+    go: seek,
+    next: () => adjust(1),
+    prev: () => adjust(-1),
+    clear: () => seek(-1),
+    restart: () => {
+      dispatch({ type: "restart", sceneCount: scenes.length, now: performance.now() });
+      setCameraResetKey((current) => current + 1);
     },
-    next: () => {
-      setPlaying(false);
-      setStep((s) => Math.min(n - 1, s + 1));
-    },
-    prev: () => {
-      setPlaying(false);
-      setStep((s) => Math.max(-1, s - 1));
-    },
-    clear: () => {
-      setPlaying(false);
-      setStep(-1);
-    },
+    setDuration,
     toggle: () => {
-      if (playing) {
-        setPlaying(false);
+      if (timeline.playing) {
+        const scene = scenes[timeline.sceneIndex];
+        dispatch({
+          type: "pause",
+          now: performance.now(),
+          durationMs: scene ? durations[scene.id] ?? 0 : 0,
+        });
         return;
       }
-      if (n === 0) return;
-      setStep((s) => (s >= n - 1 ? 0 : Math.max(s, 0)));
-      setPlaying(true);
+      if (scenes.length === 0) return;
+      if (timeline.sceneIndex < 0 || timeline.sceneIndex >= scenes.length - 1) {
+        setCameraResetKey((current) => current + 1);
+      }
+      dispatch({ type: "play", sceneCount: scenes.length, now: performance.now() });
     },
   };
 }
@@ -131,7 +162,7 @@ function mergeTrace(list: TraceItem[], ev: TraceItem): TraceItem[] {
   return c;
 }
 
-export function useAnalysisRun(url: string, token: string | null) {
+export function useAnalysisRun(url: string, token: string | null, preserveExisting = false) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [trace, setTrace] = useState<TraceItem[]>([]);
   const [core, setCore] = useState<AnalysisCore | null>(null);
@@ -172,7 +203,10 @@ export function useAnalysisRun(url: string, token: string | null) {
             // Persist immediately so a refresh or a closed tab never loses the sketch.
             initialSave = (async () => {
               try {
-                const rec = await saveAnalysis({ ...ev.analysis, codingPrompt: text });
+                const rec = await saveAnalysis(
+                  { ...ev.analysis, codingPrompt: text },
+                  { preserveExisting },
+                );
                 history.replaceState(null, "", `#/r/${rec.id}`);
               } catch {
                 /* keep running; the final save will retry */
@@ -187,7 +221,10 @@ export function useAnalysisRun(url: string, token: string | null) {
             // The early save may still be pending. Serialize both writes so
             // an empty prompt can never overwrite the completed one.
             if (initialSave) await initialSave;
-            const rec = await saveAnalysis({ ...latest, codingPrompt: text });
+            const rec = await saveAnalysis(
+              { ...latest, codingPrompt: text },
+              { preserveExisting },
+            );
             history.replaceState(null, "", `#/r/${rec.id}`);
             setStatus("done");
           }
@@ -205,7 +242,7 @@ export function useAnalysisRun(url: string, token: string | null) {
       ac.abort();
       cancelAnimationFrame(frame);
     };
-  }, [url, token]);
+  }, [preserveExisting, url, token]);
 
   const analysis = useMemo<Analysis | null>(
     () => (core ? { ...core, codingPrompt: prompt } : null),

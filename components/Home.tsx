@@ -168,9 +168,9 @@ function RepoForm({ onStart }: { onStart: (url: string, token: string | null) =>
 
 function Preview() {
   const [ref, seen] = useInViewOnce<HTMLDivElement>();
-  const trace = useTrace(EXAMPLE.flow.length);
+  const trace = useTrace(EXAMPLE.story);
   const [selected, setSelected] = useState<string | null>(null);
-  const last = EXAMPLE.flow.length - 1;
+  const last = EXAMPLE.story.scenes.length - 1;
 
   useEffect(() => {
     if (!seen) return;

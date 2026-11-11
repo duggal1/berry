@@ -1,6 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkNode } from "elkjs/lib/elk-api";
-import type { Edge, Module } from "@/lib/schema";
+import type { Edge, Module, Story, StoryAction } from "@/lib/schema";
 import { snap } from "./rough";
 
 export type PNode = {
@@ -94,9 +94,64 @@ function size(m: Module) {
   return { width: Math.max(176, snap(base)), height: m.kind === "datastore" ? 80 : 72 };
 }
 
-export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
+function moduleIdsForActions(actions: StoryAction[], edges: Edge[]): Set<string> {
+  const result = new Set<string>();
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
+  for (const action of actions) {
+    if (action.kind === "enter" || action.kind === "exit" || action.kind === "effect" || action.kind === "spawn") {
+      result.add(action.moduleId);
+      if (action.kind === "spawn") {
+        const edge = edgeById.get(action.edgeId);
+        if (edge) result.add(edge.to);
+      }
+    } else if (action.kind === "traverse" || action.kind === "return") {
+      const edge = edgeById.get(action.edgeId);
+      if (edge) {
+        result.add(edge.from);
+        result.add(edge.to);
+      }
+    }
+  }
+  return result;
+}
+
+/** Keep the main story spine and sibling branch scenes in model order for ELK. */
+function orderedByStory(modules: Module[], edges: Edge[], story: Story): Module[] {
+  const scenesById = new Map(story.scenes.map((scene) => [scene.id, scene]));
+  const sceneRanks = new Map<string, number>();
+  const rankOf = (id: string, active = new Set<string>()): number => {
+    const cached = sceneRanks.get(id);
+    if (cached !== undefined) return cached;
+    if (active.has(id)) return 0;
+    const scene = scenesById.get(id);
+    if (!scene) return 0;
+    const nextActive = new Set(active).add(id);
+    const rank = scene.dependsOn.length
+      ? 1 + Math.max(...scene.dependsOn.map((dependency) => rankOf(dependency, nextActive)))
+      : 0;
+    sceneRanks.set(id, rank);
+    return rank;
+  };
+
+  const moduleRanks = new Map<string, number>();
+  for (const scene of story.scenes) {
+    const rank = rankOf(scene.id);
+    for (const moduleId of moduleIdsForActions(scene.actions, edges)) {
+      const previous = moduleRanks.get(moduleId);
+      if (previous === undefined || rank < previous) moduleRanks.set(moduleId, rank);
+    }
+  }
+  const originalOrder = new Map(modules.map((module, index) => [module.id, index]));
+  return modules.slice().sort((a, b) =>
+    (moduleRanks.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (moduleRanks.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+    (originalOrder.get(a.id) ?? 0) - (originalOrder.get(b.id) ?? 0),
+  );
+}
+
+export async function layout(modules: Module[], edges: Edge[], story: Story): Promise<Laid> {
   const ids = new Set(modules.map((m) => m.id));
   const real = edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
+  const storyOrderedModules = orderedByStory(modules, edges, story);
 
   // A tag sits on the wire between two layers, so the layers have to be at least as
   // far apart as the widest tag. Otherwise the badge is forced to spill onto a box.
@@ -112,9 +167,11 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
       "elk.spacing.nodeNode": "56",
       "elk.layered.spacing.nodeNodeBetweenLayers": String(layerGap),
       "elk.layered.spacing.edgeNodeBetweenLayers": "32",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
       "elk.padding": "[top=48,left=48,bottom=48,right=48]",
     },
-    children: modules.map((m) => ({ id: m.id, ...size(m) })),
+    children: storyOrderedModules.map((m) => ({ id: m.id, ...size(m) })),
     edges: real.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to] })),
   };
 
