@@ -298,7 +298,7 @@ export function Home({ onStart }: { onStart: (url: string, token: string | null)
 
       <History />
 
-      <section className="mx-auto mt-32 grid max-w-5xl gap-10 px-5 md:grid-cols-[1fr_36rem] md:px-10">
+      <section className="mx-auto mt-32 grid max-w-5xl gap-10 px-5 lg:grid-cols-[1fr_36rem] md:px-10">
         <h2 className="t-h1">Questions.</h2>
         <Accordion items={FAQ} />
       </section>
