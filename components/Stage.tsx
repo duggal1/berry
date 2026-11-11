@@ -22,6 +22,7 @@ function DotField() {
 
 function TraceBar({ trace, flow }: { trace: Trace; flow: Step[] }) {
   const cur = trace.step >= 0 ? flow[trace.step] : undefined;
+  const hasConnectedHop = flow.some((step, index) => index > 0 && Boolean(step.edgeId));
   return (
     <div className="relative mx-auto flex max-w-[1680px] flex-col gap-4 px-5 pb-6 pt-2 md:flex-row md:items-center md:gap-6 md:px-10">
       <div className="flex shrink-0 gap-2">
@@ -31,7 +32,7 @@ function TraceBar({ trace, flow }: { trace: Trace; flow: Step[] }) {
         <IconButton
           label={trace.playing ? "Pause" : "Trace one request"}
           onClick={trace.toggle}
-          disabled={flow.length === 0}
+          disabled={!hasConnectedHop}
         >
           {trace.playing ? <PauseIcon /> : <PlayIcon />}
         </IconButton>
@@ -49,7 +50,9 @@ function TraceBar({ trace, flow }: { trace: Trace; flow: Step[] }) {
           </>
         ) : (
           <p className="text-[18px] leading-[1.4] text-neutral-600 md:text-[20px]">
-            Press play. A pen follows one real request through the system.
+            {hasConnectedHop
+              ? "Press play. A pen follows one real request through the system."
+              : "No connected request path was verified for this repository."}
           </p>
         )}
       </div>
