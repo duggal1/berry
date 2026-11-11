@@ -15,8 +15,8 @@ export async function putShare(analysis: Analysis): Promise<string> {
   if (Buffer.byteLength(body, "utf8") > MAX_SHARE_BYTES) {
     throw new HttpError(413, "This analysis is too large to share.");
   }
-  await mkdir(dir(), { recursive: true });
-  await writeFile(path.join(dir(), `${id}.json`), body, "utf8");
+  await mkdir(dir(), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(dir(), `${id}.json`), body, { encoding: "utf8", flag: "wx", mode: 0o600 });
   return id;
 }
 
