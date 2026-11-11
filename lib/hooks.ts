@@ -142,6 +142,7 @@ export function useAnalysisRun(url: string, token: string | null) {
   useEffect(() => {
     const ac = new AbortController();
     let latest: AnalysisCore | null = null;
+    let initialSave: Promise<void> | null = null;
     let text = "";
     let queue: TraceItem[] = [];
     let frame = 0;
@@ -169,7 +170,7 @@ export function useAnalysisRun(url: string, token: string | null) {
             latest = ev.analysis;
             setCore(ev.analysis);
             // Persist immediately so a refresh or a closed tab never loses the sketch.
-            void (async () => {
+            initialSave = (async () => {
               try {
                 const rec = await saveAnalysis({ ...ev.analysis, codingPrompt: text });
                 history.replaceState(null, "", `#/r/${rec.id}`);
@@ -183,6 +184,9 @@ export function useAnalysisRun(url: string, token: string | null) {
           } else if (latest) {
             cancelAnimationFrame(frame);
             flush();
+            // The early save may still be pending. Serialize both writes so
+            // an empty prompt can never overwrite the completed one.
+            if (initialSave) await initialSave;
             const rec = await saveAnalysis({ ...latest, codingPrompt: text });
             history.replaceState(null, "", `#/r/${rec.id}`);
             setStatus("done");
