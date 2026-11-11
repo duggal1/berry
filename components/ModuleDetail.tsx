@@ -33,7 +33,7 @@ export function ModuleDetail({
         {m.files.length > 0 && (
           <div>
             <h3 className="text-[16px] font-semibold">Files</h3>
-            <ul className="t-mono mt-3 space-y-1.5 text-[13px] text-neutral-600">
+            <ul className="t-mono mt-3 space-y-1.5 break-all text-[13px] text-neutral-600 sm:break-normal">
               {m.files.slice(0, 10).map((f) => (
                 <li key={f}>{f}</li>
               ))}
@@ -53,7 +53,7 @@ export function ModuleDetail({
                     {name(e.to)}
                   </span>{" "}
                   ({e.label || e.kind}).{" "}
-                  <span className="t-mono text-[12px]">
+                  <span className="t-mono break-all text-[12px] sm:break-normal">
                     {e.inferred ? "inferred, backed by" : "found in"} {e.evidence.path}
                   </span>
                 </li>
