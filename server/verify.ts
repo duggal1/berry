@@ -4,6 +4,7 @@ import type { Repository } from "./ingest";
 import { recoverEdges } from "./graph.ts";
 import { supportsLink } from "./scan.ts";
 import type { FactSheet } from "./scan";
+import { normalizeModulePresentation } from "../lib/module-presentation.ts";
 
 export type VerifyResult = {
   analysis: AnalysisCore;
@@ -28,12 +29,12 @@ function domain(raw: string | undefined): string {
     .slice(0, 64);
 }
 
-function tech(raw: string | undefined, kind: Module["kind"], files: string[], facts: FactSheet): string {
+function tech(raw: string | undefined, kind: Module["kind"]): string {
   const named = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 32);
-  if (named || kind === "external") return named;
-  const language = files.map((file) => facts.files.find((item) => item.path === file)?.language)
-    .find((value) => value && value !== "Other");
-  return (language ?? "").slice(0, 32);
+  if (kind === "external") return named;
+  return /^(?:typescript|javascript|tsx?|jsx?|python|ruby|go|rust|java|kotlin|swift|c#|c\+\+|php)$/i.test(named)
+    ? ""
+    : named;
 }
 
 function snippetAppears(file: string, snippet: string): boolean {
@@ -103,7 +104,8 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       repaired += 1;
       failures.push(`module ${raw.name} listed source files that do not exist in this commit`);
     }
-    let kind = raw.kind;
+    const presentation = normalizeModulePresentation({ ...raw, files });
+    let kind = presentation.kind;
     if (kind !== "external" && files.length === 0) {
       dropped += 1;
       failures.push(`module ${raw.name} has no source file in this commit and was removed`);
@@ -117,8 +119,8 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       ? raw.path
       : files[0]?.split("/").slice(0, -1).join("/") || (kind === "external" ? "external" : ".");
     if (path !== raw.path) repaired += 1;
-    const verifiedModule: Module = {
-      ...raw,
+    const verifiedModule: Module = normalizeModulePresentation({
+      ...presentation,
       id,
       name: firstWords(raw.name || id, 3),
       kind,
@@ -126,9 +128,14 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       files: kind === "external" ? [] : files,
       purpose: raw.purpose.trim(),
       group: raw.group.trim(),
-      tech: tech(raw.tech, kind, files, facts),
+      tech: tech(raw.tech, kind),
       domain: domain(raw.domain),
-    };
+    });
+    if (
+      verifiedModule.role !== raw.role ||
+      verifiedModule.kind !== raw.kind ||
+      verifiedModule.tech !== raw.tech
+    ) repaired += 1;
     modules.push(verifiedModule);
     moduleIds.add(id);
     addModuleAlias(raw.id, id);

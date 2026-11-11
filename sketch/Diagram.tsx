@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion, useTransform } from "motion/react";
+import type { MotionValue } from "motion/react";
 import type { Edge, Module, Story, StoryAction } from "@/lib/schema";
 import { EASE_QUINT, SPRING } from "@/lib/motion";
 import { ArrowIcon } from "@/components/ui";
@@ -8,9 +9,17 @@ import { Canvas } from "@/components/Canvas";
 import type { FocusRegion } from "@/components/Canvas";
 import { logoUrl } from "@/lib/logos";
 import { INK, KIND, ROLE, STAGE_BG } from "./palette";
-import { cylinderPaths, queuePaths, rectPaths } from "./rough";
+import {
+  cylinderPaths,
+  documentPaths,
+  entryPaths,
+  integrationPaths,
+  queuePaths,
+  rectPaths,
+  utilityPaths,
+} from "./rough";
 import type { RPath } from "./rough";
-import { layout, labelWidth, LABEL_H } from "./layout";
+import { clipLabel, layout, labelWidth, LABEL_H } from "./layout";
 import type { Laid, PEdge, PGroup, PNode } from "./layout";
 
 export type DiagramData = { modules: Module[]; edges: Edge[]; story: Story };
@@ -102,40 +111,35 @@ function pathLength(points: [number, number][]): number {
   return length;
 }
 
+function pathMotionRange(points: [number, number][]) {
+  const total = pathLength(points);
+  const first = points[0] ?? [0, 0];
+  if (points.length < 2 || total === 0) {
+    return { progress: [0, 1], x: [first[0], first[0]], y: [first[1], first[1]] };
+  }
+
+  const progress = [0];
+  const x = [first[0]];
+  const y = [first[1]];
+  let travelled = 0;
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1];
+    const current = points[i];
+    const segment = Math.hypot(current[0] - previous[0], current[1] - previous[1]);
+    if (segment === 0) continue;
+    travelled += segment;
+    progress.push(travelled / total);
+    x.push(current[0]);
+    y.push(current[1]);
+  }
+  return { progress, x, y };
+}
+
 function edgeIdsForActions(actions: StoryAction[]): string[] {
   return actions.flatMap((action) => {
     if (action.kind === "traverse" || action.kind === "return" || action.kind === "spawn") return [action.edgeId];
     return [];
   });
-}
-
-function pointAt(points: [number, number][], progress: number): [number, number] {
-  const length = pathLength(points);
-  if (points.length === 0) return [0, 0];
-  if (length === 0) return points[0];
-  let remaining = Math.max(0, Math.min(1, progress)) * length;
-  for (let i = 1; i < points.length; i++) {
-    const [x0, y0] = points[i - 1];
-    const [x1, y1] = points[i];
-    const segment = Math.hypot(x1 - x0, y1 - y0);
-    if (remaining <= segment) {
-      const t = segment === 0 ? 1 : remaining / segment;
-      return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t];
-    }
-    remaining -= segment;
-  }
-  return points[points.length - 1];
-}
-
-function sceneDuration(scene: Story["scenes"][number], laid: Laid): number {
-  const edgeIds = edgeIdsForActions(scene.actions);
-  const travel = edgeIds.reduce((longest, id) => {
-    const edge = laid.edges.find((item) => item.e.id === id);
-    return Math.max(longest, edge ? 500 + pathLength(edge.pts) * 1.15 : 0);
-  }, 0);
-  const words = `${scene.title} ${scene.caption}`.trim().split(/\s+/).filter(Boolean).length;
-  const caption = Math.max(1800, Math.min(7000, 1450 + words * 115));
-  return Math.max(caption, Math.min(4500, travel));
 }
 
 type Look = { emph: boolean; hover: boolean; dim: boolean; arrive: boolean };
@@ -159,8 +163,16 @@ const SketchNode = memo(function SketchNode(p: {
         ? cylinderPaths(m.id, w, h, color)
         : m.kind === "queue"
           ? queuePaths(m.id, w, h, color)
-          : rectPaths(m.id, w, h, color),
-    [m.id, m.kind, w, h, color],
+          : m.kind === "external" || m.role === "integration"
+            ? integrationPaths(m.id, w, h, color)
+            : m.role === "entry"
+              ? entryPaths(m.id, w, h, color)
+              : m.role === "utility"
+                ? utilityPaths(m.id, w, h, color)
+                : m.role === "data"
+                  ? documentPaths(m.id, w, h, color)
+                  : rectPaths(m.id, w, h, color),
+    [m.id, m.kind, m.role, w, h, color],
   );
   const external = m.kind === "external";
   const datastore = m.kind === "datastore";
@@ -307,7 +319,7 @@ const SketchEdge = memo(function SketchEdge(p: {
   dim: boolean;
   current: boolean;
   stepKey: number;
-  progress: number;
+  progress: MotionValue<number>;
   reduce: boolean;
   onEnter: () => void;
   onLeave: () => void;
@@ -368,16 +380,14 @@ const SketchEdge = memo(function SketchEdge(p: {
           transition={{ opacity: { duration: 0.12, delay: dly + dur }, strokeWidth: SPRING.button }}
         />
         {lit && (
-          <motion.path
+          <TraceStroke
             key={p.stepKey}
             d={body}
-            fill="none"
-            stroke={col}
-            strokeWidth={3.5}
-            strokeLinejoin="miter"
-            pathLength={1}
-            strokeDasharray={dashed ? "7 5" : "1"}
-            strokeDashoffset={current && !reduce ? (dashed ? -progress * 12 : 1 - progress) : 0}
+            color={col}
+            dashed={dashed}
+            current={current}
+            progress={progress}
+            reduce={reduce}
           />
         )}
       </motion.g>
@@ -385,21 +395,54 @@ const SketchEdge = memo(function SketchEdge(p: {
   );
 });
 
+function TraceStroke({
+  d,
+  color,
+  dashed,
+  current,
+  progress,
+  reduce,
+}: {
+  d: string;
+  color: string;
+  dashed: boolean;
+  current: boolean;
+  progress: MotionValue<number>;
+  reduce: boolean;
+}) {
+  const offset = useTransform(progress, [0, 1], dashed ? [0, -12] : [1, 0]);
+  return (
+    <motion.path
+      d={d}
+      fill="none"
+      stroke={color}
+      strokeWidth={3.5}
+      strokeLinejoin="miter"
+      pathLength={1}
+      strokeDasharray={dashed ? "7 5" : "1"}
+      style={{ strokeDashoffset: current && !reduce ? offset : 0 }}
+    />
+  );
+}
+
 function EdgeLabel({
   pe,
   play,
   delay,
   dim,
   reduce,
+  visible,
 }: {
   pe: PEdge;
   play: boolean;
   delay: number;
   dim: boolean;
   reduce: boolean;
+  visible: boolean;
 }) {
-  const text = pe.e.label || pe.e.kind;
-  const w = labelWidth(text);
+  const raw = pe.e.label || pe.e.kind;
+  const text = clipLabel(raw);
+  const w = labelWidth(raw);
   const h = LABEL_H;
   // Positioned by the layout: on the wire, but slid along it to the roomiest point.
   const x = pe.lx - w / 2;
@@ -409,8 +452,8 @@ function EdgeLabel({
     <motion.g
       style={{ pointerEvents: "none" }}
       initial={{ opacity: 0 }}
-      animate={{ opacity: !play ? 0 : 1 }}
-      transition={{ duration: 0.18, delay: drawn || reduce ? 0 : delay + DRAW }}
+      animate={{ opacity: !play || !visible ? 0 : 1 }}
+      transition={{ duration: reduce ? 0 : 0.22, delay: drawn || reduce ? 0 : delay + DRAW, ease: EASE_QUINT }}
     >
       {/* Opaque, always. A see-through tag lets the wire run through the letters. */}
       <rect x={x} y={y} width={w} height={h} fill={dim ? "#e5e5e5" : INK} />
@@ -454,20 +497,68 @@ function SketchGroup({ g, play, delay }: { g: PGroup; play: boolean; delay: numb
 }
 
 
-function Pen({ laid, edges, progress, reduce }: { laid: Laid; edges: PEdge[]; progress: number; reduce: boolean }) {
+function PenDot({
+  edge,
+  role,
+  progress,
+  reduce,
+}: {
+  edge: PEdge;
+  role: Module["role"];
+  progress: MotionValue<number>;
+  reduce: boolean;
+}) {
+  const range = useMemo(() => pathMotionRange(edge.pts), [edge.pts]);
+  const x = useTransform(progress, range.progress, range.x);
+  const y = useTransform(progress, range.progress, range.y);
+
+  if (reduce) {
+    const [endX, endY] = edge.pts[edge.pts.length - 1] ?? [0, 0];
+    return (
+      <g transform={`translate(${endX} ${endY})`}>
+        <circle r={8.5} fill={STAGE_BG} />
+        <circle r={5.5} fill={INK} />
+        <circle r={2} fill={ROLE[role]} />
+      </g>
+    );
+  }
+
+  return (
+    <motion.g style={{ x, y }}>
+      <circle r={8.5} fill={STAGE_BG} />
+      <circle r={5.5} fill={INK} />
+      <circle r={2} fill={ROLE[role]} />
+    </motion.g>
+  );
+}
+
+function Pen({
+  laid,
+  edges,
+  progress,
+  reduce,
+  stepKey,
+}: {
+  laid: Laid;
+  edges: PEdge[];
+  progress: MotionValue<number>;
+  reduce: boolean;
+  stepKey: number;
+}) {
   if (!edges.length) return null;
   return (
     <g pointerEvents="none">
       {edges.map((edge) => {
         const end = laid.nodes.find((node) => node.id === edge.e.to);
         if (!end) return null;
-        const [x, y] = pointAt(edge.pts, reduce ? 1 : progress);
         return (
-          <g key={edge.e.id} transform={`translate(${x} ${y})`}>
-            <circle r={8.5} fill={STAGE_BG} />
-            <circle r={5.5} fill={INK} />
-            <circle r={2} fill={ROLE[end.m.role]} />
-          </g>
+          <PenDot
+            key={`${edge.e.id}:${stepKey}`}
+            edge={edge}
+            role={end.m.role}
+            progress={progress}
+            reduce={reduce}
+          />
         );
       })}
     </g>
@@ -479,8 +570,7 @@ export function Diagram(props: {
   title: string;
   play: boolean;
   step: number;
-  progress: number;
-  onSceneDuration: (sceneId: string, durationMs: number) => void;
+  progress: MotionValue<number>;
   focusResetKey: number;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -489,7 +579,6 @@ export function Diagram(props: {
   toolbar?: ReactNode;
 }) {
   const { data, play, step, progress, selected, onSelect } = props;
-  const onSceneDuration = props.onSceneDuration;
   const reduce = useReducedMotion() ?? false;
   const [laid, setLaid] = useState<Laid | null>(null);
   const [failed, setFailed] = useState(false);
@@ -537,9 +626,9 @@ export function Diagram(props: {
   }, [data.modules, data.edges, data.story]);
 
   const cur = step >= 0 ? data.story.scenes[step] : undefined;
-  useEffect(() => {
-    if (cur && laid) onSceneDuration(cur.id, sceneDuration(cur, laid));
-  }, [cur, laid, onSceneDuration]);
+  const reached = useTransform(progress, (value) => value >= 1);
+  const [arrived, setArrived] = useState(progress.get() >= 1);
+  useEffect(() => reached.on("change", setArrived), [reached]);
 
   const mode: "trace" | "focus" | "idle" = cur ? "trace" : hover || selected || hoverEdge ? "focus" : "idle";
 
@@ -569,6 +658,7 @@ export function Diagram(props: {
     () => cur ? modulesForActions(cur.actions, data.edges) : new Set<string>(),
     [cur, data.edges],
   );
+  const displayedEdges = useMemo(() => laid?.edges.map((edge) => edge.e) ?? [], [laid]);
   const focusRegion = useMemo<FocusRegion | null>(() => {
     if (step < 0 || !laid) return null;
     const active = laid.nodes.filter((node) => currentModuleIds.has(node.id));
@@ -586,7 +676,7 @@ export function Diagram(props: {
     const f = hover ?? selected;
     if (f) {
       nodes.add(f);
-      for (const e of data.edges)
+      for (const e of displayedEdges)
         if (e.from === f || e.to === f) {
           nodes.add(e.from);
           nodes.add(e.to);
@@ -595,14 +685,14 @@ export function Diagram(props: {
     }
     if (hoverEdge) {
       edges.add(hoverEdge);
-      const e = data.edges.find((x) => x.id === hoverEdge);
+      const e = displayedEdges.find((x) => x.id === hoverEdge);
       if (e) {
         nodes.add(e.from);
         nodes.add(e.to);
       }
     }
     return { nodes, edges };
-  }, [hover, selected, hoverEdge, data.edges]);
+  }, [hover, selected, hoverEdge, displayedEdges]);
 
   const depth = useMemo(() => new Map((laid?.nodes ?? []).map((n) => [n.id, n.depth])), [laid]);
   const name = (id: string) => data.modules.find((m) => m.id === id)?.name ?? id;
@@ -676,7 +766,7 @@ export function Diagram(props: {
                       : mode === "focus"
                         ? !focus.nodes.has(n.id)
                         : false,
-                  arrive: mode === "trace" && currentModuleIds.has(n.id) && progress >= 1,
+                  arrive: mode === "trace" && currentModuleIds.has(n.id) && arrived,
                 }}
                 onEnter={() => enter(n.id)}
                 onLeave={() => setHover((h) => (h === n.id ? null : h))}
@@ -684,7 +774,7 @@ export function Diagram(props: {
               />
             ))}
             {/* The pen runs under the labels, so a tag never covers the travelling dot. */}
-            <Pen laid={laid} edges={currentPenEdges} progress={progress} reduce={reduce} />
+            <Pen laid={laid} edges={currentPenEdges} progress={progress} reduce={reduce} stepKey={step} />
             {laid.edges.map((pe) => {
               const id = pe.e.id;
               const delay = Math.max(depth.get(pe.e.from) ?? 0, depth.get(pe.e.to) ?? 0) * STAGGER + 0.5;
@@ -698,6 +788,7 @@ export function Diagram(props: {
                   dim={
                     mode === "trace" ? !lit.edges.has(id) : mode === "focus" ? !focus.edges.has(id) : false
                   }
+                  visible={hoverEdge === id || (mode === "trace" ? currentEdgeIds.has(id) : mode === "focus" && focus.edges.has(id))}
                 />
               );
             })}

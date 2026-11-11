@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import type { HTMLMotionProps } from "motion/react";
 import { SPRING } from "@/lib/motion";
 import { INK, PALETTE, ROLE } from "@/sketch/palette";
 
@@ -62,12 +63,16 @@ export function IconButton({
   dark = true,
   className = "",
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; dark?: boolean }) {
+}: HTMLMotionProps<"button"> & { label: string; dark?: boolean }) {
+  const reduce = useReducedMotion() ?? false;
   return (
-    <button
+    <motion.button
       type="button"
       aria-label={label}
       title={label}
+      whileHover={reduce ? undefined : { scale: 1.035 }}
+      whileTap={reduce ? undefined : { scale: 0.96 }}
+      transition={SPRING.icon}
       style={wipe(dark ? ROLE.core : INK)}
       className={`btn grid size-11 shrink-0 place-items-center disabled:pointer-events-none disabled:opacity-30 ${
         dark

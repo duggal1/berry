@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { shareAnalysis } from "@/lib/api";
 import { useTrace } from "@/lib/hooks";
 import { EASE_QUINT } from "@/lib/motion";
+import { normalizeModulePresentations } from "@/lib/module-presentation";
 import { prefs } from "@/lib/prefs";
 import { GENERATOR_VERSION, STORY_SCHEMA_VERSION, type Analysis } from "@/lib/schema";
 import { ROLE } from "@/sketch/palette";
@@ -97,11 +98,13 @@ export function Workspace({
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("summary");
   const stageRef = useRef<HTMLDivElement>(null);
+  const modules = useMemo(() => normalizeModulePresentations(analysis.modules), [analysis.modules]);
+  const displayAnalysis = useMemo(() => ({ ...analysis, modules }), [analysis, modules]);
   const data = useMemo(
-    () => ({ modules: analysis.modules, edges: analysis.edges, story: analysis.story }),
-    [analysis.modules, analysis.edges, analysis.story],
+    () => ({ modules, edges: analysis.edges, story: analysis.story }),
+    [modules, analysis.edges, analysis.story],
   );
-  const picked = analysis.modules.find((m) => m.id === selected);
+  const picked = modules.find((m) => m.id === selected);
   const toStage = () => stageRef.current?.scrollIntoView({
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     block: "start",
@@ -165,7 +168,7 @@ export function Workspace({
       </div>
 
       <div className="mx-auto mt-14 max-w-5xl px-5 md:px-10">
-        {picked && <ModuleDetail m={picked} analysis={analysis} onClose={() => setSelected(null)} />}
+        {picked && <ModuleDetail m={picked} analysis={displayAnalysis} onClose={() => setSelected(null)} />}
 
         <div role="tablist" className="flex snap-x snap-proximity gap-8 overflow-x-auto overscroll-x-contain pb-3 md:snap-none">
           {TABS.map((t) => {
@@ -191,7 +194,7 @@ export function Workspace({
         <div role="tabpanel" className="pt-10">
           {tab === "summary" && (
             <SummaryPane
-              analysis={analysis}
+              analysis={displayAnalysis}
               onPick={(id) => {
                 setSelected(id);
                 toStage();
@@ -208,9 +211,9 @@ export function Workspace({
               }}
             />
           )}
-          {tab === "prompt" && <PromptPane analysis={analysis} running={running} />}
-          {tab === "interview" && <InterviewPane analysis={analysis} />}
-          {tab === "ask" && <AskPane analysis={analysis} demo={demo} />}
+          {tab === "prompt" && <PromptPane analysis={displayAnalysis} running={running} />}
+          {tab === "interview" && <InterviewPane analysis={displayAnalysis} />}
+          {tab === "ask" && <AskPane analysis={displayAnalysis} demo={demo} />}
         </div>
       </div>
     </main>

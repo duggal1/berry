@@ -266,8 +266,8 @@ export async function explore(args: {
         args.onTrace?.({
           id: thinkId,
           kind: "think",
-          label: "Thinking",
-          text: ev.text,
+          label: "Reviewing source evidence",
+          text: "",
           done: false,
         });
       } else if (ev.type === "content") {
@@ -282,7 +282,7 @@ export async function explore(args: {
     }
 
     if (reasoning) {
-      args.onTrace?.({ id: thinkId, kind: "think", label: "Thinking", text: "", done: true });
+      args.onTrace?.({ id: thinkId, kind: "think", label: "Reviewing source evidence", text: "", done: true });
     }
 
     return {

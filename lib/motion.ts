@@ -5,6 +5,22 @@ export const SCROLL_SPRING = { stiffness: 80, damping: 24, mass: 0.6, restDelta:
 
 export const SPRING = {
   button: { type: "spring" as const, stiffness: 110, damping: 24, mass: 1.3 },
+  camera: {
+    type: "spring" as const,
+    stiffness: 250,
+    damping: 30,
+    mass: 0.75,
+    restDelta: 0.2,
+    restSpeed: 0.2,
+  },
+  trace: {
+    type: "spring" as const,
+    stiffness: 700,
+    damping: 58,
+    mass: 0.2,
+    restDelta: 0.0005,
+    restSpeed: 0.005,
+  },
   faqHeight: {
     type: "spring" as const,
     stiffness: 88,

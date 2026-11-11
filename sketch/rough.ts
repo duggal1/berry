@@ -64,6 +64,26 @@ function build(
 export const rectPaths = (id: string, w: number, h: number, color: string | null) =>
   build(`r:${id}:${w}:${h}:${color}`, id, color, (o) => [gen.rectangle(0, 0, w, h, o)]);
 
+export const entryPaths = (id: string, w: number, h: number, color: string | null) =>
+  build(`entry:${id}:${w}:${h}:${color}`, id, color, (o) => [
+    gen.path(`M0 0 H${w - 18} L${w} ${h / 2} L${w - 18} ${h} H0 Z`, o),
+  ]);
+
+export const integrationPaths = (id: string, w: number, h: number, color: string | null) =>
+  build(`integration:${id}:${w}:${h}:${color}`, id, color, (o) => [
+    gen.path(`M14 0 H${w - 14} L${w} ${h / 2} L${w - 14} ${h} H14 L0 ${h / 2} Z`, o),
+  ]);
+
+export const utilityPaths = (id: string, w: number, h: number, color: string | null) =>
+  build(`utility:${id}:${w}:${h}:${color}`, id, color, (o) => [
+    gen.path(`M10 0 H${w - 10} Q${w} 0 ${w} 10 V${h - 10} Q${w} ${h} ${w - 10} ${h} H10 Q0 ${h} 0 ${h - 10} V10 Q0 0 10 0 Z`, o),
+  ]);
+
+export const documentPaths = (id: string, w: number, h: number, color: string | null) =>
+  build(`document:${id}:${w}:${h}:${color}`, id, color, (o) => [
+    gen.path(`M0 0 H${w - 18} L${w} 18 V${h} H0 Z M${w - 18} 0 V18 H${w}`, o),
+  ]);
+
 export const queuePaths = (id: string, w: number, h: number, color: string | null) =>
   build(`q:${id}:${w}:${h}:${color}`, id, color, (o) => [
     gen.rectangle(0, 0, w, h, o),

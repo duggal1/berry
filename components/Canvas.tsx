@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent, ReactNode } from "react";
+import { motion } from "motion/react";
+import { SPRING } from "@/lib/motion";
 
 const MIN_K = 0.04;
 const MAX_K = 16;
@@ -108,14 +110,17 @@ export function Canvas({
     if (!focusRegion || touched.current) return;
     const el = box.current;
     if (!el || !el.clientWidth || !el.clientHeight) return;
-    const padding = 56;
+    const padding = 72;
     const region = {
       x: Math.max(0, focusRegion.x - padding),
       y: Math.max(0, focusRegion.y - padding),
       w: Math.min(w, focusRegion.w + padding * 2),
       h: Math.min(h, focusRegion.h + padding * 2),
     };
-    const k = clampK(Math.min(el.clientWidth / region.w, el.clientHeight / region.h) * 0.82);
+    const overview = Math.min(el.clientWidth / w, el.clientHeight / h) * 0.97;
+    const cap = Math.min(1.1, Math.max(overview * 2.2, 0.6));
+    const framed = Math.min(el.clientWidth / region.w, el.clientHeight / region.h) * 0.9;
+    const k = clampK(Math.max(overview, Math.min(framed, cap)));
     setView({
       x: el.clientWidth / 2 - (region.x + region.w / 2) * k,
       y: el.clientHeight / 2 - (region.y + region.h / 2) * k,
@@ -230,15 +235,15 @@ export function Canvas({
       className="relative w-full touch-pan-y select-none overflow-hidden outline-none md:touch-none"
       style={{ height, cursor: grabbing ? "grabbing" : "grab" }}
     >
-      <div
-        className="absolute left-0 top-0 will-change-transform"
+      <motion.div
+        className="absolute left-0 top-0"
         style={{
           width: w,
           height: h,
-          transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.k})`,
           transformOrigin: "0 0",
-          transition: autoFocus && !reducedMotion ? "transform 240ms ease-out" : "none",
         }}
+        animate={{ x: view.x, y: view.y, scale: view.k }}
+        transition={autoFocus && !reducedMotion ? SPRING.camera : { duration: 0 }}
       >
         <svg
           width={w}
@@ -250,7 +255,7 @@ export function Canvas({
         >
           {children}
         </svg>
-      </div>
+      </motion.div>
 
       {toolbar && (
         <div data-canvas-ui className="absolute left-4 top-4 z-10 md:left-6 md:top-5">

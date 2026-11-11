@@ -1,11 +1,14 @@
 import { useMemo } from "react";
-import { useInViewOnce } from "@/lib/hooks";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { SPEEDS, useInViewOnce } from "@/lib/hooks";
+import { EASE_QUINT } from "@/lib/motion";
 import type { Trace } from "@/lib/hooks";
 import type { Edge, Story } from "@/lib/schema";
 import { Diagram } from "@/sketch/Diagram";
 import type { DiagramData } from "@/sketch/Diagram";
 import { INK, KIND, ROLE } from "@/sketch/palette";
-import { ChevronIcon, IconButton, PauseIcon, PlayIcon } from "./ui";
+import { storyEdgeIds } from "@/sketch/layout";
+import { ChevronIcon, IconButton, PauseIcon, PlayIcon, Segmented } from "./ui";
 
 function DotField() {
   return (
@@ -34,6 +37,7 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
   }) ?? [];
   const fork = cur?.actions.find((action) => action.kind === "fork");
   const canPlay = scenes.length > 0;
+  const reduce = useReducedMotion() ?? false;
   return (
     <div className="relative mx-auto flex max-w-[1680px] flex-col gap-4 px-5 pb-6 pt-2 md:flex-row md:items-center md:gap-6 md:px-10">
       <div className="flex shrink-0 gap-2">
@@ -54,9 +58,25 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
           <ChevronIcon dir="right" />
         </IconButton>
       </div>
+      <Segmented
+        id="story-speed"
+        value={String(trace.speed)}
+        onChange={(value) => trace.setSpeed(Number(value))}
+        options={SPEEDS.map((value) => ({ id: String(value), label: `${value}×` }))}
+      />
+      <p className="shrink-0 text-[13px] tabular-nums text-neutral-500">
+        {trace.step >= 0 ? `${trace.step + 1} / ${scenes.length}` : `${scenes.length} scenes`}
+      </p>
       <div aria-live="polite" className="min-h-[3.75rem] min-w-0 flex-1">
+        <AnimatePresence initial={false}>
         {cur ? (
-          <>
+          <motion.div
+            key={cur.id}
+            initial={reduce ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? undefined : { opacity: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_QUINT }}
+          >
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p className="text-[22px] font-semibold leading-[1.1] tracking-tight md:text-[28px]">{cur.title}</p>
               {cur.branchMode === "exclusive" && <span className="t-mono text-[11px] text-neutral-500">alternative outcome</span>}
@@ -85,41 +105,36 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
             {trace.step === scenes.length - 1 && (
               <p className="mt-2 text-[13px] text-neutral-600">{story.completion.summary}</p>
             )}
-          </>
+          </motion.div>
         ) : (
-          <p className="text-[18px] leading-[1.4] text-neutral-600 md:text-[20px]">
+          <motion.p
+            key="idle"
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_QUINT }}
+            className="text-[18px] leading-[1.4] text-neutral-600 md:text-[20px]"
+          >
             {canPlay
               ? "Play follows the verified scenes and their independent consequences."
               : "No verified story scenes are available for this repository."}
-          </p>
+          </motion.p>
         )}
+        </AnimatePresence>
         {story.completion.status !== "success" && (
           <p className="mt-1 text-[13px] text-neutral-500">Partial explanation · {story.completion.summary}</p>
         )}
       </div>
-      {cur && (
-        <span className="t-mono shrink-0 text-[13px] tabular-nums text-neutral-500">
-          {trace.step + 1} / {scenes.length}
-        </span>
-      )}
-      {canPlay && (
-        <input
-          type="range"
-          min={-1}
-          max={scenes.length - 1}
-          value={trace.step}
-          onChange={(event) => trace.go(Number(event.currentTarget.value))}
-          aria-label="Seek explanation scene"
-          className="w-full accent-neutral-950 md:max-w-48"
-        />
-      )}
     </div>
   );
 }
 
 function Legend({ data }: { data: DiagramData }) {
   const roles = useMemo(() => [...new Set(data.modules.map((m) => m.role))], [data.modules]);
-  const kinds = useMemo(() => [...new Set(data.edges.map((e) => e.kind))], [data.edges]);
+  const kinds = useMemo(() => {
+    const ids = storyEdgeIds(data.story);
+    return [...new Set(data.edges.filter((edge) => ids.has(edge.id)).map((edge) => edge.kind))];
+  }, [data.edges, data.story]);
   return (
     <ul className="relative mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-7 gap-y-2.5 px-5 pb-8 text-neutral-600 md:px-10">
       {roles.map((r) => (
@@ -170,7 +185,6 @@ export function Stage(props: {
           play={seen}
           step={props.trace.step}
           progress={props.trace.progress}
-          onSceneDuration={props.trace.setDuration}
           focusResetKey={props.trace.cameraResetKey}
           selected={props.selected}
           onSelect={props.onSelect}

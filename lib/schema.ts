@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const STORY_SCHEMA_VERSION = 3;
-export const GENERATOR_VERSION = "3";
+export const GENERATOR_VERSION = "4";
 
 export const Role = z.enum(["entry", "core", "data", "integration", "utility", "config"]);
 export const Kind = z.enum(["service", "datastore", "queue", "external"]);

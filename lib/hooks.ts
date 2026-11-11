@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { animate, useMotionValue } from "motion/react";
 import { analyzeRepo } from "./api";
 import { saveAnalysis } from "./store";
-import type { Analysis, AnalysisCore, Stage, Story, TraceItem } from "./schema";
-import { INITIAL_TIMELINE, reduceTimeline } from "./timeline";
+import type { Analysis, AnalysisCore, Stage, Story, StoryScene, TraceItem } from "./schema";
 
 export type Route =
   | { name: "home" }
@@ -82,66 +82,147 @@ export function useInViewOnce<T extends Element>(margin = "-10% 0px") {
   return [ref, seen] as const;
 }
 
+export const SPEEDS = [1, 1.5, 2, 3] as const;
+
+function sceneTiming(scene: StoryScene | undefined) {
+  if (!scene) return { travel: 0, total: 0 };
+  const moves = scene.actions.some((action) => action.kind === "traverse" || action.kind === "return" || action.kind === "spawn");
+  const words = `${scene.title} ${scene.caption}`.trim().split(/\s+/).filter(Boolean).length;
+  const read = Math.min(2800, Math.max(1000, 600 + words * 60));
+  const travel = moves ? 750 : 0;
+  return { travel, total: Math.max(read, travel + 350) };
+}
+
 export function useTrace(story: Story) {
   const scenes = story.scenes;
-  const [timeline, dispatch] = useReducer(reduceTimeline, INITIAL_TIMELINE);
-  const [durations, setDurations] = useState<Record<string, number>>({});
+  const [step, setStep] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeedState] = useState<number>(1.5);
   const [cameraResetKey, setCameraResetKey] = useState(0);
-  const setDuration = useCallback((id: string, durationMs: number) => {
-    setDurations((current) => current[id] === durationMs ? current : { ...current, [id]: durationMs });
+  const progress = useMotionValue(0);
+  const run = useRef(0);
+  const animator = useRef<ReturnType<typeof animate> | null>(null);
+  const playSceneRef = useRef<(index: number, chain: boolean, durationOverride?: number) => void>(() => undefined);
+  const startedAt = useRef(0);
+  const durationMs = useRef(0);
+  const remainingMs = useRef(0);
+  const speedRef = useRef(speed);
+  const stepRef = useRef(step);
+  const playingRef = useRef(playing);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+
+  const stop = useCallback(() => {
+    run.current += 1;
+    animator.current?.stop();
+    animator.current = null;
   }, []);
 
+  const playScene = useCallback((index: number, chain: boolean, durationOverride?: number) => {
+    stop();
+    const token = run.current;
+    const scene = scenes[index];
+    setStep(index);
+    stepRef.current = index;
+    if (!scene) { setPlaying(false); playingRef.current = false; return; }
+    const fullDuration = sceneTiming(scene).total / speedRef.current;
+    const duration = durationOverride ?? fullDuration;
+    durationMs.current = fullDuration;
+    remainingMs.current = duration;
+    startedAt.current = performance.now();
+    animator.current = animate(progress, 1, {
+      duration: duration / 1000,
+      ease: "linear",
+      onComplete: () => {
+        if (run.current !== token || !chain) return;
+        if (index >= scenes.length - 1) {
+          setPlaying(false);
+          playingRef.current = false;
+          return;
+        }
+        progress.jump(0);
+        playSceneRef.current(index + 1, true);
+      },
+    });
+  }, [progress, scenes, stop]);
+  useEffect(() => { playSceneRef.current = playScene; }, [playScene]);
+
   useEffect(() => {
-    const scene = scenes[timeline.sceneIndex];
-    const duration = scene ? durations[scene.id] : undefined;
-    if (!timeline.playing || !scene || !duration) return;
+    stop();
+    // A new storyboard invalidates the previous scene index.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStep(-1);
+    setPlaying(false);
+    stepRef.current = -1;
+    playingRef.current = false;
+    progress.jump(0);
+    remainingMs.current = 0;
+  }, [story, stop, progress]);
+  useEffect(() => () => stop(), [stop]);
 
-    let frame = 0;
-    const tick = (now: number) => {
-      dispatch({ type: "tick", sceneCount: scenes.length, durationMs: duration, now });
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [durations, scenes, timeline.playing, timeline.sceneIndex]);
+  const go = useCallback((index: number) => {
+    setPlaying(false);
+    playingRef.current = false;
+    stop();
+    const next = Math.max(-1, Math.min(scenes.length - 1, index));
+    setStep(next);
+    stepRef.current = next;
+    progress.jump(next < 0 ? 0 : 1);
+    remainingMs.current = 0;
+    if (next < 0) setCameraResetKey((key) => key + 1);
+  }, [progress, scenes.length, stop]);
 
-  const seek = (index: number) => {
-    dispatch({ type: "seek", sceneCount: scenes.length, sceneIndex: index });
-    if (index < 0) setCameraResetKey((current) => current + 1);
-  };
+  const toggle = useCallback(() => {
+    if (playingRef.current) {
+      const elapsed = Math.max(0, performance.now() - startedAt.current);
+      remainingMs.current = Math.max(0, remainingMs.current - elapsed);
+      stop();
+      setPlaying(false);
+      playingRef.current = false;
+      return;
+    }
+    if (!scenes.length) return;
+    const current = stepRef.current;
+    const index = current < 0 || current >= scenes.length - 1 ? 0 : current;
+    if (current < 0 || current >= scenes.length - 1) {
+      progress.jump(0);
+      remainingMs.current = 0;
+      setCameraResetKey((key) => key + 1);
+    }
+    const resume = current === index && remainingMs.current > 0 && progress.get() > 0;
+    const duration = resume ? remainingMs.current : undefined;
+    if (!resume) progress.jump(0);
+    setPlaying(true);
+    playingRef.current = true;
+    playScene(index, true, duration);
+  }, [playScene, progress, scenes.length, stop]);
 
-  const adjust = (delta: number) => seek(timeline.sceneIndex + delta);
+  const setSpeed = useCallback((next: number) => {
+    if (!SPEEDS.some((value) => value === next)) return;
+    setSpeedState(next);
+    if (!playingRef.current) return;
+    const elapsed = Math.max(0, performance.now() - startedAt.current);
+    remainingMs.current = Math.max(0, remainingMs.current - elapsed);
+    const current = stepRef.current;
+    stop();
+    playScene(current, true, remainingMs.current * speedRef.current / next);
+  }, [playScene, stop]);
 
   return {
-    step: timeline.sceneIndex,
-    playing: timeline.playing,
-    progress: timeline.progress,
-    cameraResetKey,
-    go: seek,
-    next: () => adjust(1),
-    prev: () => adjust(-1),
-    clear: () => seek(-1),
+    step, playing, progress, speed, setSpeed, cameraResetKey,
+    travelSec: sceneTiming(scenes[step]).travel / 1000 / speed,
+    go,
+    next: () => go(step + 1),
+    prev: () => go(step - 1),
+    clear: () => go(-1),
     restart: () => {
-      dispatch({ type: "restart", sceneCount: scenes.length, now: performance.now() });
-      setCameraResetKey((current) => current + 1);
+      progress.jump(0);
+      remainingMs.current = 0;
+      setCameraResetKey((key) => key + 1);
+      setPlaying(true);
+      playingRef.current = true;
+      playScene(0, true);
     },
-    setDuration,
-    toggle: () => {
-      if (timeline.playing) {
-        const scene = scenes[timeline.sceneIndex];
-        dispatch({
-          type: "pause",
-          now: performance.now(),
-          durationMs: scene ? durations[scene.id] ?? 0 : 0,
-        });
-        return;
-      }
-      if (scenes.length === 0) return;
-      if (timeline.sceneIndex < 0 || timeline.sceneIndex >= scenes.length - 1) {
-        setCameraResetKey((current) => current + 1);
-      }
-      dispatch({ type: "play", sceneCount: scenes.length, now: performance.now() });
-    },
+    toggle,
   };
 }
 

@@ -4,7 +4,7 @@ import path from "node:path";
 import { AnalysisCore } from "@/lib/schema";
 import { config } from "./config";
 
-const ANALYSIS_CACHE_VERSION = 5;
+const ANALYSIS_CACHE_VERSION = 6;
 
 export type CacheRecord = {
   version?: number;
