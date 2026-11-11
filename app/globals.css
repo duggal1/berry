@@ -192,6 +192,13 @@ textarea {
   .btn::before {
     transition: none;
   }
+  .btn > span > span {
+    transition: none !important;
+    transform: none !important;
+  }
+  .btn > span > span[aria-hidden] {
+    display: none;
+  }
 }
 
 
