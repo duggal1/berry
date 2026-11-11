@@ -70,6 +70,20 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
 
   const modules: Module[] = [];
   const moduleIds = new Set<string>();
+  const aliases = new Map<string, string | null>();
+
+  // The model may use display names, mixed-case IDs or punctuation in edge
+  // endpoints. Canonicalize references once instead of silently dropping links.
+  function addAlias(raw: string, id: string) {
+    if (!raw) return;
+    for (const key of [raw, slug(raw)]) {
+      const previous = aliases.get(key);
+      if (previous === undefined) aliases.set(key, id);
+      else if (previous !== id) aliases.set(key, null); // ambiguous; never guess
+    }
+  }
+  const resolveId = (raw: string) =>
+    aliases.get(raw) ?? aliases.get(slug(raw)) ?? raw;
 
   for (const raw of core.modules ?? []) {
     let id = slug(raw.id || raw.name);
@@ -118,6 +132,8 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       domain: domain(raw.domain),
     });
     moduleIds.add(id);
+    addAlias(raw.id, id);
+    addAlias(raw.name, id);
   }
 
   const limited = modules.slice(0, 12);
@@ -126,12 +142,15 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
   const byId = new Map(limited.map((m) => [m.id, m]));
   const edges: Edge[] = [];
   const edgeIds = new Set<string>();
+  const edgeAliases = new Map<string, string>();
 
   for (const raw of core.edges ?? []) {
-    let id = slug(raw.id || `${raw.from}-${raw.to}`) || "edge";
+    const fromId = resolveId(raw.from);
+    const toId = resolveId(raw.to);
+    let id = slug(raw.id || `${fromId}-${toId}`) || "edge";
     while (edgeIds.has(id)) id = `${id}-${edges.length + 1}`;
 
-    if (!byId.has(raw.from) || !byId.has(raw.to) || raw.from === raw.to) {
+    if (!byId.has(fromId) || !byId.has(toId) || fromId === toId) {
       dropped += 1;
       failures.push(`edge ${raw.from} to ${raw.to} pointed at a module that does not exist`);
       continue;
@@ -160,8 +179,8 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
 
     let inferred = raw.inferred !== false;
     if (!inferred) {
-      const from = byId.get(raw.from)!;
-      const to = byId.get(raw.to)!;
+      const from = byId.get(fromId)!;
+      const to = byId.get(toId)!;
       const supported = supportsLink(facts, from.files, to.files, to, path);
       if (!supported) {
         inferred = true;
@@ -174,14 +193,16 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
 
     edges.push({
       id,
-      from: raw.from,
-      to: raw.to,
+      from: fromId,
+      to: toId,
       kind: raw.kind,
       label: firstWords(raw.label ?? raw.kind, 3),
       inferred,
       evidence: { path, snippet },
     });
     edgeIds.add(id);
+    edgeAliases.set(raw.id, id);
+    edgeAliases.set(slug(raw.id), id);
   }
 
   const edgeById = new Map(edges.map((e) => [e.id, e]));
@@ -189,19 +210,20 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
   const stepIds = new Set<string>();
 
   for (const raw of core.flow ?? []) {
-    if (!byId.has(raw.moduleId)) {
+    const moduleId = resolveId(raw.moduleId);
+    if (!byId.has(moduleId)) {
       dropped += 1;
       failures.push(`flow step "${raw.title}" referenced a module that does not exist`);
       continue;
     }
-    let edgeId = raw.edgeId ?? "";
+    let edgeId = edgeAliases.get(raw.edgeId) ?? edgeAliases.get(slug(raw.edgeId)) ?? raw.edgeId ?? "";
     if (edgeId && !edgeById.has(edgeId)) {
       edgeId = "";
       repaired += 1;
     }
     if (edgeId) {
       const edge = edgeById.get(edgeId)!;
-      if (edge.from !== raw.moduleId && edge.to !== raw.moduleId) {
+      if (edge.from !== moduleId && edge.to !== moduleId) {
         edgeId = "";
         repaired += 1;
       }
@@ -211,7 +233,7 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     stepIds.add(id);
     flow.push({
       id,
-      moduleId: raw.moduleId,
+      moduleId,
       edgeId,
       title: firstWords(raw.title ?? "", 4),
       text: raw.text ?? "",
