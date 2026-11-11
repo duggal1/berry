@@ -28,13 +28,17 @@ function toolSpecs(): ToolSpec[] {
     {
       name: "list_files",
       description:
-        "List the files under a directory prefix. Returns one line per file with its path, language and line count.",
+        "List files under a directory prefix, 250 per page. Use offset to continue past the first page. Returns paths, language and line count.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
             description: "Directory prefix such as src/api. Use an empty string for the whole repository.",
+          },
+          offset: {
+            type: "number",
+            description: "Zero-based file offset. Use the next offset returned by a previous page.",
           },
         },
         required: ["path"],
@@ -104,12 +108,18 @@ function runTool(
   switch (name) {
     case "list_files": {
       const prefix = str("path").replace(/^\/+|\/+$/g, "");
-      const rows = facts.files
-        .filter((f) => !prefix || f.path === prefix || f.path.startsWith(`${prefix}/`))
-        .slice(0, 250)
+      const matching = facts.files
+        .filter((f) => !prefix || f.path === prefix || f.path.startsWith(`${prefix}/`));
+      if (!matching.length) return `No files under ${prefix || "the repository root"}.`;
+      const offset = Math.max(0, num("offset"));
+      const rows = matching.slice(offset, offset + 250)
         .map((f) => `${f.path} [${f.language}, ${f.lines} lines]`);
-      if (!rows.length) return `No files under ${prefix || "the repository root"}.`;
-      return clip(rows.join("\n"));
+      const next = offset + rows.length;
+      return clip([
+        `Files ${rows.length ? offset + 1 : 0}-${next} of ${matching.length}`,
+        ...rows,
+        ...(next < matching.length ? [`Next offset: ${next}`] : []),
+      ].join("\n"));
     }
 
     case "read_file": {
