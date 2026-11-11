@@ -582,6 +582,34 @@ export function factSheetText(facts: FactSheet, maxFiles = 260): string {
     }
   }
 
+  // Swift and similar languages connect in-repo files via type construction,
+  // not via a per-file import. Give the agent candidate references to inspect.
+  // These are navigation hints, never proof of a runtime call.
+  const uniqueTypeFile = new Map<string, string | null>();
+  for (const [file, declared] of Object.entries(facts.symbols)) {
+    for (const symbol of declared) {
+      if (!/^[A-Z][A-Za-z0-9_]*$/.test(symbol)) continue;
+      const previous = uniqueTypeFile.get(symbol);
+      if (previous === undefined) uniqueTypeFile.set(symbol, file);
+      else if (previous !== file) uniqueTypeFile.set(symbol, null);
+    }
+  }
+  const candidateUses: string[] = [];
+  for (const [file, called] of Object.entries(facts.calls)) {
+    for (const symbol of called) {
+      const owner = uniqueTypeFile.get(symbol);
+      if (owner && owner !== file) {
+        candidateUses.push(`  ${file} -> ${owner}  (candidate: ${symbol}(...))`);
+      }
+      if (candidateUses.length >= 80) break;
+    }
+    if (candidateUses.length >= 80) break;
+  }
+  if (candidateUses.length) {
+    lines.push("", "CANDIDATE CROSS-FILE TYPE USES (not verified; read source before asserting a call)");
+    lines.push(...candidateUses);
+  }
+
   if (facts.services.length) {
     lines.push("", "EXTERNAL SERVICES (from SDK imports)");
     for (const s of facts.services) {
