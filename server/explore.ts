@@ -249,6 +249,7 @@ export async function explore(args: {
     for await (const ev of streamChat({
       messages,
       tools: withTools ? tools : undefined,
+      forceReadFile: withTools && rounds === 0,
       schema: analysisJsonSchema,
       schemaName: "analysis",
       maxTokens: 16_000,
