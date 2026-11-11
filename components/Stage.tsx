@@ -102,6 +102,7 @@ export function Stage(props: {
   return (
     <section ref={ref} className="relative w-full bg-neutral-100">
       <DotField />
+      <p className="relative px-5 pt-5 text-[13px] text-neutral-600 md:hidden">Swipe sideways to explore the sketch.</p>
       <div className="relative mx-auto max-w-[1680px] px-1 pt-6 md:px-8 md:pt-10">
         <div className="flex min-h-[min(72vh,780px)] items-center">
           <div className="w-full">
