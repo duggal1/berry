@@ -22,6 +22,18 @@ const slug = (s: string) =>
 
 const firstWords = (s: string, n: number) => s.trim().split(/\s+/).slice(0, n).join(" ");
 
+/** A clean domain for an outside service, used to fetch its logo. */
+function domain(raw: string | undefined): string {
+  const d = (raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .slice(0, 64);
+  return d;
+}
+
 /** The named technology for a module. The model names it; the repository is the fallback. */
 function tech(raw: string | undefined, kind: Module["kind"], files: string[], facts: FactSheet): string {
   const named = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 32);
@@ -103,6 +115,7 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
       files: kind === "external" ? [] : keptFiles,
       group: raw.group ?? "",
       tech: tech(raw.tech, kind, keptFiles, facts),
+      domain: domain(raw.domain),
     });
     moduleIds.add(id);
   }

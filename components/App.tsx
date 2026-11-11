@@ -7,7 +7,9 @@ import { useAnalysisRun, useRoute } from "@/lib/hooks";
 import type { Analysis } from "@/lib/schema";
 import { getAnalysis, saveAnalysis } from "@/lib/store";
 import { INK } from "@/sketch/palette";
+import { CanvasStage } from "./Stage";
 import { Header } from "./Header";
+import { History } from "./History";
 import { Home } from "./Home";
 import { Thinking } from "./Thinking";
 import { Workspace } from "./Workspace";
@@ -86,6 +88,22 @@ function LocalView({ id }: { id: string }) {
   return <Workspace analysis={a} />;
 }
 
+function CanvasView({ id }: { id: string }) {
+  const [a, setA] = useState<Analysis | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    getAnalysis(id)
+      .then((r) => live && setA(r))
+      .catch(() => live && setA(null));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  if (a === undefined) return <main className="min-h-screen" aria-busy />;
+  if (!a) return <Message title="Not found." body="This analysis is not saved in this browser." />;
+  return <CanvasStage data={{ modules: a.modules, edges: a.edges, flow: a.flow }} title={a.meta.title} id={id} onBack={() => { location.hash = `#/r/${id}`; }} />;
+}
+
 function SharedView({ id }: { id: string }) {
   const [a, setA] = useState<Analysis | null | undefined>(undefined);
   const [err, setErr] = useState("");
@@ -134,7 +152,9 @@ export default function App() {
       {route.name === "home" && <Home onStart={start} />}
       {route.name === "example" && <Workspace analysis={EXAMPLE} demo />}
       {route.name === "run" && <RunView url={route.url} token={token} />}
+      {route.name === "history" && <History />}
       {route.name === "local" && <LocalView key={route.id} id={route.id} />}
+      {route.name === "canvas" && <CanvasView key={route.id} id={route.id} />}
       {route.name === "shared" && <SharedView key={route.id} id={route.id} />}
     </>
   );

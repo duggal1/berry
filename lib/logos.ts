@@ -47,7 +47,9 @@ const SLUGS: Record<string, string> = {
   sendgrid: "twilio",
 };
 
-export function logoUrl(tech?: string): string | null {
+export function logoUrl(tech?: string, domain?: string): string | null {
+  const d = (domain ?? "").trim().toLowerCase();
+  if (d) return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(d)}&sz=64`;
   const key = (tech ?? "").trim().toLowerCase();
   if (!key) return null;
   const slug = SLUGS[key] ?? key.replace(/[^a-z0-9]/g, "");

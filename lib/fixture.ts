@@ -5,12 +5,12 @@ export const EXAMPLE:Analysis={meta:{repo:"example/orders-api",sha:"demo",title:
 {id:"api",name:"HTTP API",role:"entry",kind:"service",purpose:"Receives order requests and validates them.",path:"src/api",files:["src/api/server.ts","src/api/routes.ts","src/api/validate.ts"],group:"",tech:"TypeScript"},
 {id:"auth",name:"Auth",role:"core",kind:"service",purpose:"Checks the caller's token before anything else runs.",path:"src/auth",files:["src/auth/verify.ts","src/auth/session.ts"],group:"",tech:"Node.js"},
 {id:"orders",name:"Order logic",role:"core",kind:"service",purpose:"Creates orders, charges them and queues fulfilment.",path:"src/orders",files:["src/orders/create.ts","src/orders/pricing.ts","src/orders/state.ts"],group:"",tech:"TypeScript"},
-{id:"payments",name:"Payments client",role:"integration",kind:"service",purpose:"Wraps the payment provider's charge call.",path:"src/payments",files:["src/payments/charge.ts","src/payments/refund.ts"],group:"",tech:"Stripe"},
+{id:"payments",name:"Payments client",role:"integration",kind:"service",purpose:"Wraps the payment provider's charge call.",path:"src/payments",files:["src/payments/charge.ts","src/payments/refund.ts"],group:"",tech:"Stripe",domain:"stripe.com"},
 {id:"db",name:"Orders DB",role:"data",kind:"datastore",purpose:"Stores orders and their state.",path:"src/db",files:["src/db/schema.ts","src/db/client.ts","src/db/migrations/001.sql"],group:"",tech:"Postgres"},
 {id:"queue",name:"Fulfilment queue",role:"data",kind:"queue",purpose:"Holds shipping jobs until the worker takes them.",path:"src/jobs",files:["src/jobs/queue.ts","src/jobs/types.ts"],group:"",tech:"Redis"},
 {id:"worker",name:"Worker",role:"utility",kind:"service",purpose:"Ships queued orders and sends receipts.",path:"src/worker",files:["src/worker/main.ts","src/worker/ship.ts","src/worker/receipt.ts"],group:"",tech:"Node.js"},
-{id:"provider",name:"Payment provider",role:"integration",kind:"external",purpose:"Third-party service that moves the money.",path:"external",files:[],group:"",tech:"Stripe"},
-{id:"mail",name:"Email provider",role:"integration",kind:"external",purpose:"Third-party service that delivers receipts.",path:"external",files:[],group:"",tech:"SendGrid"}],edges:[
+{id:"provider",name:"Payment provider",role:"integration",kind:"external",purpose:"Third-party service that moves the money.",path:"external",files:[],group:"",tech:"Stripe",domain:"stripe.com"},
+{id:"mail",name:"Email provider",role:"integration",kind:"external",purpose:"Third-party service that delivers receipts.",path:"external",files:[],group:"",tech:"SendGrid",domain:"sendgrid.com"}],edges:[
 {id:"e1",from:"api",to:"auth",kind:"call",label:"verify token",inferred:false,evidence:ev("src/api/routes.ts","const user = await verifyToken(req.headers.authorization);")},
 {id:"e2",from:"api",to:"orders",kind:"call",label:"create order",inferred:false,evidence:ev("src/api/routes.ts","const order = await createOrder(user, body);")},
 {id:"e3",from:"orders",to:"db",kind:"data",label:"insert",inferred:false,evidence:ev("src/orders/create.ts","await db.insert(orders).values(draft);")},

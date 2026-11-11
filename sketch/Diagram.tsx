@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { animate, motion, useReducedMotion } from "motion/react";
 import type { Edge, Module, Step } from "@/lib/schema";
 import { EASE_QUINT, SPRING } from "@/lib/motion";
 import { ArrowIcon } from "@/components/ui";
+import { Canvas } from "@/components/Canvas";
 import { logoUrl } from "@/lib/logos";
 import { INK, KIND, ROLE, STAGE_BG } from "./palette";
 import { cylinderPaths, queuePaths, rectPaths } from "./rough";
@@ -77,7 +79,7 @@ const SketchNode = memo(function SketchNode(p: {
   );
   const external = m.kind === "external";
   const datastore = m.kind === "datastore";
-  const logo = logoUrl(m.tech);
+  const logo = logoUrl(m.tech, m.domain);
   const [loadedLogo, setLoadedLogo] = useState<string | null>(null);
   const hasLogo = Boolean(logo && loadedLogo === logo);
   useEffect(() => {
@@ -366,6 +368,7 @@ function SketchGroup({ g, play, delay }: { g: PGroup; play: boolean; delay: numb
   );
 }
 
+
 function Pen({ laid, cur, reduce }: { laid: Laid; cur: Step | undefined; reduce: boolean }) {
   const mark = useRef<SVGGElement>(null);
   const path = useRef<SVGPathElement>(null);
@@ -434,6 +437,9 @@ export function Diagram(props: {
   step: number;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  height?: string;
+  zoomOnWheel?: boolean;
+  toolbar?: ReactNode;
 }) {
   const { data, play, step, selected, onSelect } = props;
   const reduce = useReducedMotion() ?? false;
@@ -534,19 +540,17 @@ export function Diagram(props: {
 
   return (
     <div>
-      <div className="overflow-x-auto">
-        <svg
-          viewBox={`0 0 ${laid.w} ${laid.h}`}
-          role="img"
-          aria-label={props.title}
-          className="block h-auto w-full min-w-[860px] select-none"
-          onClick={() => onSelect(null)}
-        >
-          <motion.g style={{ transformOrigin: "0px 0px" }}>
-            {laid.groups.map((g) => (
-              <SketchGroup key={g.name} g={g} play={play} delay={0.1} />
-            ))}
-            {laid.edges.map((pe) => {
+      <Canvas
+        w={laid.w}
+        h={laid.h}
+        title={props.title}
+        height={props.height}
+        zoomOnWheel={props.zoomOnWheel}
+        toolbar={props.toolbar}
+        onBackgroundClick={() => onSelect(null)}
+      >
+        <motion.g style={{ transformOrigin: "0px 0px" }}>
+          {laid.edges.map((pe) => {
               const id = pe.e.id;
               const isLit = mode === "trace" ? lit.edges.has(id) : focus.edges.has(id);
               const isDim =
@@ -614,8 +618,7 @@ export function Diagram(props: {
               );
             })}
           </motion.g>
-        </svg>
-      </div>
+      </Canvas>
 
       <ol className="sr-only">
         {laid.nodes.map((n) => (

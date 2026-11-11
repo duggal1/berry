@@ -1,11 +1,11 @@
-import { useMemo } from "react";
-import { useInViewOnce } from "@/lib/hooks";
+import { useMemo, useState } from "react";
+import { useInViewOnce, useTrace } from "@/lib/hooks";
 import type { Trace } from "@/lib/hooks";
 import type { Step } from "@/lib/schema";
 import { Diagram } from "@/sketch/Diagram";
 import type { DiagramData } from "@/sketch/Diagram";
 import { INK, KIND, ROLE } from "@/sketch/palette";
-import { ChevronIcon, IconButton, PauseIcon, PlayIcon } from "./ui";
+import { ArrowIcon, ChevronIcon, IconButton, PauseIcon, PlayIcon } from "./ui";
 
 function DotField() {
   return (
@@ -97,28 +97,93 @@ export function Stage(props: {
   trace: Trace;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  canvasHref?: string;
 }) {
   const [ref, seen] = useInViewOnce<HTMLElement>("-5% 0px");
   return (
     <section ref={ref} className="relative w-full bg-neutral-100">
       <DotField />
-      <p className="relative px-5 pt-5 text-[13px] text-neutral-600 md:hidden">Swipe sideways to explore the sketch.</p>
-      <div className="relative mx-auto max-w-[1680px] px-1 pt-6 md:px-8 md:pt-10">
-        <div className="flex min-h-[min(72vh,780px)] items-center">
-          <div className="w-full">
-            <Diagram
-              data={props.data}
-              title={props.title}
-              play={seen}
-              step={props.trace.step}
-              selected={props.selected}
-              onSelect={props.onSelect}
-            />
-          </div>
+      <div className="relative mx-auto max-w-[1680px] px-5 pt-6 md:px-10 md:pt-10">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="t-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+            architecture
+          </span>
+          {props.canvasHref && (
+            <a
+              href={props.canvasHref}
+              className="t-mono inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-neutral-600 transition-colors hover:text-neutral-950"
+            >
+              open canvas
+              <ArrowIcon size={12} />
+            </a>
+          )}
         </div>
+        <Diagram
+          data={props.data}
+          title={props.title}
+          play={seen}
+          step={props.trace.step}
+          selected={props.selected}
+          onSelect={props.onSelect}
+          height="min(68vh, 720px)"
+          toolbar={null}
+        />
+        </div>
+        <Diagram
+          data={props.data}
+          title={props.title}
+          play={seen}
+          step={props.trace.step}
+          selected={props.selected}
+          onSelect={props.onSelect}
+          height="min(68vh, 720px)"
+          toolbar={null}
+        />
       </div>
       <TraceBar trace={props.trace} flow={props.data.flow} />
       <Legend data={props.data} />
     </section>
+  );
+}
+
+export function CanvasStage(props: {
+  data: DiagramData;
+  title: string;
+  id: string;
+  onBack: () => void;
+}) {
+  const trace = useTrace(props.data.flow.length);
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-4 border-b border-neutral-200/60 px-5 py-3 md:px-10">
+        <a
+          href={`#/r/${props.id}`}
+          className="inline-flex items-center gap-2 text-[14px] font-medium tracking-[-0.01em] text-neutral-700 transition-colors hover:text-neutral-950"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Back to the report
+        </a>
+        <p className="truncate text-[13px] text-neutral-500">
+          {props.title} · {props.data.modules.length} modules
+        </p>
+      </div>
+      <div className="relative flex-1 min-h-0 bg-neutral-100">
+        <Diagram
+          data={props.data}
+          title={props.title}
+          play={true}
+          step={trace.step}
+          selected={selected}
+          onSelect={setSelected}
+          height="100%"
+          zoomOnWheel={true}
+        />
+        <DotField />
+      </div>
+      <TraceBar trace={trace} flow={props.data.flow} />
+    </div>
   );
 }

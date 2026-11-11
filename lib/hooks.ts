@@ -5,21 +5,26 @@ import type { Analysis, AnalysisCore, Stage, TraceItem } from "./schema";
 
 export type Route =
   | { name: "home" }
+  | { name: "history" }
   | { name: "example" }
   | { name: "run"; url: string }
   | { name: "local"; id: string }
+  | { name: "canvas"; id: string }
   | { name: "shared"; id: string };
 
 function parse(hash: string): Route {
-  const [a, b] = hash.replace(/^#\/?/, "").split("/");
+  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const a = parts[0] ?? "";
   let arg = "";
   try {
-    arg = b ? decodeURIComponent(b) : "";
+    arg = parts[1] ? decodeURIComponent(parts[1]) : "";
   } catch {
     arg = "";
   }
+  if (a === "history") return { name: "history" };
   if (a === "example") return { name: "example" };
   if (a === "run" && arg) return { name: "run", url: arg };
+  if (a === "r" && arg && parts[2] === "canvas") return { name: "canvas", id: arg };
   if (a === "r" && arg) return { name: "local", id: arg };
   if (a === "s" && arg) return { name: "shared", id: arg };
   return { name: "home" };
@@ -167,6 +172,15 @@ export function useAnalysisRun(url: string, token: string | null) {
           } else if (ev.type === "analysis") {
             latest = ev.analysis;
             setCore(ev.analysis);
+            // Persist immediately so a refresh or a closed tab never loses the sketch.
+            void (async () => {
+              try {
+                const rec = await saveAnalysis({ ...ev.analysis, codingPrompt: text });
+                history.replaceState(null, "", `#/r/${rec.id}`);
+              } catch {
+                /* keep running; the final save will retry */
+              }
+            })();
           } else if (ev.type === "prompt") {
             text += ev.text;
             schedule();

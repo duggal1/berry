@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { shareAnalysis } from "@/lib/api";
 import { useTrace } from "@/lib/hooks";
+import { idFor } from "@/lib/store";
 import { EASE_QUINT } from "@/lib/motion";
 import { prefs } from "@/lib/prefs";
 import type { Analysis } from "@/lib/schema";
@@ -147,6 +148,7 @@ export function Workspace({
           trace={trace}
           selected={selected}
           onSelect={setSelected}
+          canvasHref={`#/r/${idFor(analysis)}/canvas`}
         />
       </div>
 

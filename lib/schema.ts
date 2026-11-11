@@ -15,6 +15,8 @@ export const Module = z.object({
   group: z.string(),
   /** The framework, language, database or service this part is actually built with. */
   tech: z.string().optional(),
+  /** Website domain of an outside service, used to fetch its logo (e.g. stripe.com). */
+  domain: z.string().optional(),
 });
 
 export const Edge = z.object({

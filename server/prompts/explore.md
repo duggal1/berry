@@ -25,6 +25,7 @@ The output:
 - stack: short technology names you actually saw in the repository.
 - modules: at most twelve. One module is one real part of the system: an entry point, a core area, a datastore, a queue or an outside service. name is at most three words. purpose is one sentence.
 - Every module also carries tech: the one technology its own files or SDK import actually show, written the way the project writes it (SwiftUI, Docker, Postgres, Redis, Stripe, S3). One or two words. Use an empty string when the code shows no named technology. Never guess. tech feeds the logo drawn inside the module box.
+- A module may also carry domain: the website domain of an outside service it talks to (stripe.com, github.com). Only set it for modules whose kind is "external" or that wrap a vendor. Leave it empty for code you own. domain is used to fetch that service's logo.
 - edges: the links between modules. Each one is backed by a real line of code.
 - flow: at most eight steps following one real request or data path, from entry point to result. The first step has an empty edgeId.
 - interview: a sixty second pitch in the first person, three to five honest tradeoffs or weak spots, and five to eight likely questions with answers grounded in this repository.
