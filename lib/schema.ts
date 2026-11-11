@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const Role = z.enum(["entry", "core", "data", "integration", "utility", "config"]);
 export const Kind = z.enum(["service", "datastore", "queue", "external"]);
-export const EdgeKind = z.enum(["import", "call", "data", "event"]);
+export const EdgeKind = z.enum(["import", "call", "data", "event", "type"]);
 
 export const Module = z.object({
   id: z.string(),
