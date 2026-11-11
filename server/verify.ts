@@ -225,7 +225,10 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     }
     if (edgeId) {
       const edge = edgeById.get(edgeId)!;
-      if (edge.from !== moduleId && edge.to !== moduleId) {
+      const preceding = flow[flow.length - 1];
+      // A trace hop must actually connect the last step to this one.
+      // Merely touching the current node can animate an unrelated edge.
+      if (!preceding || edge.from !== preceding.moduleId || edge.to !== moduleId) {
         edgeId = "";
         repaired += 1;
       }
