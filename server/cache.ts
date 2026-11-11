@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { AnalysisCore } from "@/lib/schema";
 import { config } from "./config";
@@ -31,12 +32,20 @@ export async function getCache(repo: string, sha: string): Promise<CacheRecord |
 }
 
 export async function putCache(record: CacheRecord): Promise<void> {
-  await mkdir(dir(), { recursive: true });
-  await writeFile(
-    path.join(dir(), `${key(record.repo, record.sha)}.json`),
-    JSON.stringify({ ...record, version: ANALYSIS_CACHE_VERSION }),
-    "utf8",
-  );
+  await mkdir(dir(), { recursive: true, mode: 0o700 });
+  const dest = path.join(dir(), `${key(record.repo, record.sha)}.json`);
+  const temp = `${dest}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    // A same-directory rename prevents readers observing half-written JSON.
+    await writeFile(temp, JSON.stringify({ ...record, version: ANALYSIS_CACHE_VERSION }), {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temp, dest);
+  } finally {
+    await rm(temp, { force: true });
+  }
 }
 
 export function parseCache(raw: string): CacheRecord | null {
