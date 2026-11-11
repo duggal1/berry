@@ -138,6 +138,15 @@ export async function POST(req: Request) {
       throw new Error("Nothing in this repository could be verified against the code.");
     }
 
+    const verifiedLinks = checked.analysis.edges.filter((e) => !e.inferred).length;
+    const linkedIds = new Set(checked.analysis.edges.flatMap((e) => [e.from, e.to]));
+    const isolated = checked.analysis.modules.filter((m) => !linkedIds.has(m.id)).length;
+    send("stage", {
+      id: "verify",
+      label: "Architecture checked",
+      detail: `${verifiedLinks} verified links, ${checked.analysis.edges.length - verifiedLinks} inferred, ${isolated} unconnected modules.`,
+    });
+
     send("analysis", checked.analysis);
 
     send("stage", {
