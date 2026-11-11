@@ -17,20 +17,12 @@ export function Header({ route }: { route: Route }) {
         </span>
         Berry
       </a>
-      <nav className="flex items-center gap-4">
-        <a
-          href="#/history"
-          className={`t-mono text-[12px] uppercase tracking-[0.14em] transition-colors ${route.name === "history" ? "text-neutral-950" : "text-neutral-500 hover:text-neutral-950"}`}
-        >
-          History
-        </a>
-        <a
-          href={home ? "#/example" : "#/"}
-          className="inline-flex h-10 items-center bg-neutral-950 px-4 text-[15px] font-medium tracking-tight text-white transition-colors duration-100 hover:bg-neutral-700"
-        >
-          {home ? "Open the example" : "Explain a repo"}
-        </a>
-      </nav>
+      <a
+        href={home ? "#/example" : "#/"}
+        className="inline-flex h-10 items-center bg-neutral-950 px-4 text-[15px] font-medium tracking-tight text-white transition-colors duration-100 hover:bg-neutral-700"
+      >
+        {home ? "Open the example" : "Explain a repo"}
+      </a>
     </header>
   );
 }
