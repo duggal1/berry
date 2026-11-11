@@ -502,7 +502,10 @@ export function scan(repo: string, sha: string, files: Map<string, string>): Fac
         }
       }
     }
-    if (isEntryPath(path)) entryPoints.add(path);
+    if (isEntryPath(path) || (base === "main.swift") ||
+        (path.endsWith(".swift") && /@(?:main|UIApplicationMain)\b/.test(text))) {
+      entryPoints.add(path);
+    }
     if (/^Dockerfile$/i.test(base)) {
       for (const m of text.matchAll(/^\s*(?:CMD|ENTRYPOINT)\s+(.+)$/gm)) {
         const cmd = m[1].match(/[\w./-]+\.(?:js|ts|py|go|sh)/);
