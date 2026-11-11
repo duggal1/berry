@@ -207,8 +207,57 @@ export function Canvas({
 
       <div
         data-canvas-ui
-        className="absolute bottom-4 left-4 z-10 flex items-center gap-2 bg-white/90 px-2 py-1 backdrop-blur-[2px] md:bottom-5 md:left-6"
+        className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1 bg-white/90 px-2 py-1.5 backdrop-blur-[2px] md:bottom-5 md:right-6"
       >
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onClick={() => zoomBy(view.k > 1 ? 1 / 1.2 : 1 / 1.5)}
+            className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+          >
+            −
+          </button>
+          <label className="flex items-center">
+            <span className="sr-only">Zoom percentage</span>
+            <input
+              type="number"
+              min={Math.round(MIN_K * 100)}
+              max={Math.round(MAX_K * 100)}
+              step="1"
+              value={Math.round(view.k * 100)}
+              aria-label="Zoom percentage"
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isFinite(v)) return;
+                touched.current = true;
+                setView((prev) => ({ ...prev, k: clampK(v / 100) }));
+              }}
+              className="min-w-[4ch] bg-transparent px-1 text-center text-[12px] font-medium tabular-nums text-neutral-500 outline-none"
+            />
+            <span className="text-[12px] font-medium tabular-nums text-neutral-500">%</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              touched.current = false;
+              fit(true);
+            }}
+            className="min-w-[3ch] px-1 text-center text-[11px] font-medium tabular-nums text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+            aria-label="Fit the whole sketch"
+            title="Fit entire sketch"
+          >
+            fit
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onClick={() => zoomBy(view.k < 1 ? 1.5 : 1.2)}
+            className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+          >
+            +
+          </button>
+        </div>
         <input
           type="range"
           min={MIN_K}
@@ -221,44 +270,8 @@ export function Canvas({
             const k = clampK(Number(e.target.value));
             setView((v) => ({ ...v, k }));
           }}
-          className="h-1 w-24 cursor-pointer accent-neutral-950 md:w-40"
+          className="h-1 w-full cursor-pointer accent-neutral-950"
         />
-        <span className="t-mono min-w-[3ch] tabular-nums text-neutral-500">
-          {Math.round(view.k * 100)}%
-        </span>
-      </div>
-
-      <div
-        data-canvas-ui
-        className="absolute bottom-4 right-4 z-10 flex items-center gap-0.5 bg-white/90 px-1 py-1 backdrop-blur-[2px] md:bottom-5 md:right-6"
-      >
-        <button
-          type="button"
-          aria-label="Zoom out"
-          onClick={() => zoomBy(view.k > 1 ? 1 / 1.2 : 1 / 1.5)}
-          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            touched.current = false;
-            fit(true);
-          }}
-          className="min-w-11 px-1 text-center text-[12px] font-medium tabular-nums text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-          aria-label="Fit the whole sketch"
-        >
-          {Math.round(view.k * 100)}%
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom in"
-          onClick={() => zoomBy(view.k < 1 ? 1.5 : 1.2)}
-          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
-        >
-          +
-        </button>
       </div>
     </div>
   );
