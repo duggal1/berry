@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Berry
 
-## Getting Started
+Berry turns a GitHub repository into an architecture sketch, a step-by-step request trace, and a prompt that gives a coding agent useful context about the codebase.
 
-First, run the development server:
+## What it does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Draws modules and relationships found in a repository, with verified and inferred links distinguished.
+- Traces a request through the architecture, one hop at a time.
+- Generates an architecture-aware prompt and interview briefing.
+- Lets you ask follow-up questions about an analysis.
+- Keeps saved analyses in the browser using IndexedDB. A shared link uploads the analysis to the server, including evidence snippets.
+
+Public repositories work without a GitHub token. Private repositories require a token with read access. The token is sent for that run and can optionally be remembered in this browser.
+
+## Run locally
+
+Requirements: [Bun](https://bun.sh/) 1.4.4 and Node.js compatible with Next.js 16.
+
+```sh
+bun install --frozen-lockfile
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. You can browse the example without configuring an AI provider.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+To analyze repositories, configure the provider in `.env.local`:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```dotenv
+REFLECTION_API_KEY=your_api_key
+# Optional overrides:
+# REFLECTION_BASE_URL=https://api.reflection.ai/openai/v1
+# REFLECTION_MODEL=Beam-1.0-501B-A23B
+# GITHUB_TOKEN=your_optional_server_token
+```
 
-## Learn More
+Never commit API keys or repository tokens. `GITHUB_TOKEN` is optional for server-side GitHub access.
 
-To learn more about Next.js, take a look at the following resources:
+## Checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```sh
+bun run lint
+bunx tsc --noEmit
+bun run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Storage and sharing
 
-## Deploy on Vercel
+Saved analyses use local IndexedDB. Server-side cache and shared analyses use files under `.data/` by default. This filesystem storage requires persistent disk and is **not durable on ephemeral/serverless hosts**. Do not rely on shared links surviving deployment or instance replacement unless persistent storage is configured.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Private-repository analyses may contain code excerpts. Check what is included before sharing a link. Anyone with the link can read its shared analysis.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Design
+
+Read [DESIGN.md](./DESIGN.md) before changing any interface code. The diagram uses fixed role colours, sketch strokes, square corners, no shadows or panel borders, and reduced-motion support. Keep desktop behaviour and styling intact when making the mobile layout responsive.
