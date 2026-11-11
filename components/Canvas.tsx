@@ -56,6 +56,8 @@ export function Canvas({
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [grabbing, setGrabbing] = useState(false);
   const [autoFocus, setAutoFocus] = useState(false);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [focusResumeKey, setFocusResumeKey] = useState(0);
 
   const fit = useCallback((showAll = false) => {
     const el = box.current;
@@ -79,6 +81,8 @@ export function Canvas({
   // takes over the view.
   useLayoutEffect(() => {
     touched.current = false;
+    const el = box.current;
+    if (el) setViewport({ width: el.clientWidth, height: el.clientHeight });
     fit();
   }, [fit]);
 
@@ -86,6 +90,10 @@ export function Canvas({
     const el = box.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
+      setViewport((current) => {
+        const next = { width: el.clientWidth, height: el.clientHeight };
+        return current.width === next.width && current.height === next.height ? current : next;
+      });
       if (!touched.current) fit();
     });
     ro.observe(el);
@@ -114,7 +122,7 @@ export function Canvas({
       k,
     });
     setAutoFocus(true);
-  }, [focusKey, focusRegion, focusResetKey, h, w]);
+  }, [focusKey, focusRegion, focusResetKey, focusResumeKey, h, w, viewport.width, viewport.height]);
 
   useEffect(() => {
     const el = box.current;
@@ -215,6 +223,7 @@ export function Canvas({
         else if (e.key === "-") zoomBy(1 / 1.2);
         else if (e.key === "0") {
           touched.current = false;
+          setFocusResumeKey((key) => key + 1);
           fit(true);
         }
       }}
@@ -265,6 +274,7 @@ export function Canvas({
           type="button"
           onClick={() => {
             touched.current = false;
+            setFocusResumeKey((key) => key + 1);
             setAutoFocus(false);
             fit(true);
           }}
