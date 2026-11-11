@@ -95,5 +95,21 @@ export function recoverEdges(
       add(owners.get(source), owners.get(target), "call", `uses ${symbol}`, true, source, excerpt);
     }
   }
+  // Swift uses module-local type declarations with static method calls
+  // such as Scanner.scanWatchdog() and Cleaner.clean(), not file-level imports.
+  // The generic calls index only records the method name, so inspect the
+  // qualified source expression and retain it as explicitly inferred.
+  for (const [source, text] of files) {
+    if (!source.endsWith(".swift")) continue;
+    for (const line of text.split(/\r?\n/)) {
+      const snippet = line.trim();
+      if (!snippet || snippet.length > 120 || snippet.startsWith("//") || snippet.startsWith("*")) continue;
+      for (const match of line.matchAll(/\b([A-Z][A-Za-z0-9_]*)\s*\.\s*([a-zA-Z_][A-Za-z0-9_]*)\s*\(/g)) {
+        const target = declarations.get(match[1]);
+        if (!target || target === source) continue;
+        add(owners.get(source), owners.get(target), "call", `calls ${match[2]}`, true, source, snippet);
+      }
+    }
+  }
   return result;
 }
