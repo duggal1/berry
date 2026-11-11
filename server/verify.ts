@@ -272,7 +272,18 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     interview,
   });
 
-  const essential = analysis.modules.length === 0 || analysis.edges.length === 0;
+  const connected = new Set(analysis.edges.flatMap((e) => [e.from, e.to]));
+  const isolated = analysis.modules.filter((m) => !connected.has(m.id)).length;
+  const sparse = analysis.modules.length >= 6 && isolated > analysis.modules.length / 2;
+  if (sparse) {
+    // Surface this first so the bounded second agent pass sees it even when
+    // there are many individual validation failures.
+    failures.unshift(
+      `The architecture has ${isolated} disconnected modules out of ${analysis.modules.length}. Revisit the actual request path, select fewer relevant modules, and verify more relationships from source. Do not invent edges.`,
+    );
+  }
+
+  const essential = analysis.modules.length === 0 || analysis.edges.length === 0 || sparse;
 
   return { analysis, failures, dropped, repaired, essential };
 }
