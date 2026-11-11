@@ -92,10 +92,16 @@ export async function* askRepo(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ analysis, question, history }),
   });
+  let finished = false;
   for await (const { event, data } of stream(res)) {
     if (event === "delta") yield Text.parse(data).text;
     else if (event === "error") throw new Error(Msg.parse(data).message);
+    else if (event === "done") {
+      finished = true;
+      break;
+    }
   }
+  if (!finished) throw new Error("The answer stream was interrupted before completion.");
 }
 
 export async function shareAnalysis(analysis: Analysis): Promise<string> {
