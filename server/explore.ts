@@ -99,7 +99,7 @@ function runTool(
   }
 
   const str = (k: string) => (typeof args[k] === "string" ? (args[k] as string) : "");
-  const num = (k: string) => (typeof args[k] === "number" ? (args[k] as number) : 0);
+  const num = (k: string) => (typeof args[k] === "number" && Number.isFinite(args[k]) ? Math.trunc(args[k] as number) : 0);
 
   switch (name) {
     case "list_files": {
@@ -118,7 +118,7 @@ function runTool(
       if (text === undefined) return `No such file: ${path}. Use list_files to find the real path.`;
       const all = text.split("\n");
       const start = Math.max(1, num("start") || 1);
-      const end = Math.min(all.length, num("end") || Math.min(all.length, start + 299));
+      const end = Math.min(all.length, start + 299, num("end") || start + 299);
       const out: string[] = [];
       for (let i = start; i <= end; i++) out.push(`${i}: ${all[i - 1]}`);
       return clip(out.join("\n"));
