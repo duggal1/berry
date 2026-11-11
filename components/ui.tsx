@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { SPRING } from "@/lib/motion";
 import { INK, PALETTE, ROLE } from "@/sketch/palette";
 
@@ -136,6 +136,7 @@ export const StopIcon = () => (
 );
 
 export function Pulse({ label, tone }: { label: string; tone?: string }) {
+  const reduce = useReducedMotion() ?? false;
   const colors = tone ? [tone] : [ROLE.entry, ROLE.core, ROLE.data];
   return (
     <p className="flex items-center gap-3 text-[15px] leading-none text-neutral-950" aria-live="polite">
@@ -145,8 +146,8 @@ export function Pulse({ label, tone }: { label: string; tone?: string }) {
             key={c}
             className="size-2"
             style={{ background: c }}
-            animate={{ opacity: [0.28, 1, 0.28] }}
-            transition={{
+            animate={reduce ? { opacity: 1 } : { opacity: [0.28, 1, 0.28] }}
+            transition={reduce ? { duration: 0 } : {
               duration: 1.6,
               repeat: Infinity,
               delay: i * 0.18,
@@ -171,6 +172,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   options: { id: T; label: string }[];
 }) {
+  const reduce = useReducedMotion() ?? false;
   return (
     <div role="radiogroup" className="relative inline-flex h-11 items-center bg-neutral-100 p-1">
       {options.map((o) => {
@@ -190,7 +192,7 @@ export function Segmented<T extends string>({
               <motion.span
                 layoutId={`seg-${id}`}
                 className="absolute inset-0 bg-neutral-950"
-                transition={SPRING.slide}
+                transition={reduce ? { duration: 0 } : SPRING.slide}
               />
             )}
             <span className="relative">{o.label}</span>

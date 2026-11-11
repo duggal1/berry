@@ -15,7 +15,7 @@ export const SPRING = {
   },
   faqY: { type: "spring" as const, stiffness: 120, damping: 22, mass: 1, delay: 0.05 },
   icon: { type: "spring" as const, stiffness: 260, damping: 34, mass: 1 },
-  row: { type: "spring" as const, stiffness: 140, damping: 22, mass: 0.9 },
+  row: { type: "spring" as const, stiffness: 140, damping: 24, mass: 0.9 },
   bar: { type: "spring" as const, stiffness: 260, damping: 30, mass: 0.8 },
-  slide: { type: "spring" as const, stiffness: 420, damping: 36, mass: 0.9 },
+  slide: { type: "spring" as const, stiffness: 420, damping: 40, mass: 0.9 },
 };
