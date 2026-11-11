@@ -59,7 +59,7 @@ function toolSpecs(): ToolSpec[] {
     {
       name: "search",
       description:
-        "Search file contents. The pattern is a regular expression, matched case insensitively. Returns file, line number and the matching line.",
+        "Search file contents using a case-insensitive literal substring. Regex characters are treated as text. Returns file, line number and matching line.",
       parameters: {
         type: "object",
         properties: {
@@ -128,19 +128,14 @@ function runTool(
       const pattern = str("pattern");
       if (!pattern) return "Give a pattern to search for.";
       const prefix = str("path").replace(/^\/+|\/+$/g, "");
-      let re: RegExp;
-      try {
-        re = new RegExp(pattern, "gi");
-      } catch {
-        return `"${pattern}" is not a valid regular expression.`;
-      }
+      const needle = pattern.toLowerCase();
+      if (needle.length > 160) return "Search text must be at most 160 characters.";
       const hits: string[] = [];
       for (const [path, text] of repo.files) {
         if (prefix && path !== prefix && !path.startsWith(`${prefix}/`)) continue;
         const lines = text.split("\n");
         for (let i = 0; i < lines.length && hits.length < 60; i++) {
-          re.lastIndex = 0;
-          if (re.test(lines[i])) {
+          if (lines[i].toLowerCase().includes(needle)) {
             hits.push(`${path}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
           }
         }
