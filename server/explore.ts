@@ -319,6 +319,12 @@ export async function explore(args: {
       continue;
     }
 
+    if (result.finishReason === "length") {
+      throw new Error("The provider ran out of completion tokens before finishing the analysis.");
+    }
+    if (result.finishReason === "tool_calls" && !result.calls.length) {
+      throw new Error("The provider requested tools but did not return valid tool calls.");
+    }
     if (result.content) last = result.content;
     break;
   }
@@ -326,6 +332,9 @@ export async function explore(args: {
   if (!last) {
     const result = await runRound(false);
     budget.tokens += result.usage.totalTokens;
+    if (result.finishReason === "length") {
+      throw new Error("The provider ran out of completion tokens before completing the analysis.");
+    }
     last = result.content;
   }
 
