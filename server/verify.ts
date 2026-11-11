@@ -158,6 +158,12 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     }
 
     const path = raw.evidence?.path ?? "";
+    const fromModule = byId.get(fromId)!;
+    if (fromModule.files.length && !fromModule.files.includes(path)) {
+      dropped += 1;
+      failures.push(`edge ${raw.from} to ${raw.to} cited ${path || "no file"} outside its source module`);
+      continue;
+    }
     const file = repo.files.get(path);
     if (!file) {
       dropped += 1;
