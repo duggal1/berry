@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { PointerEvent as RPointerEvent, ReactNode } from "react";
 
 const MIN_K = 0.04;
-const MAX_K = 3;
+const MAX_K = 8;
 const clampK = (k: number) => Math.min(MAX_K, Math.max(MIN_K, k));
 
 /**
@@ -207,12 +207,35 @@ export function Canvas({
 
       <div
         data-canvas-ui
+        className="absolute bottom-4 left-4 z-10 flex items-center gap-2 bg-white/90 px-2 py-1 backdrop-blur-[2px] md:bottom-5 md:left-6"
+      >
+        <input
+          type="range"
+          min={MIN_K}
+          max={MAX_K}
+          step="0.01"
+          value={view.k}
+          aria-label="Zoom level"
+          onChange={(e) => {
+            touched.current = true;
+            const k = clampK(Number(e.target.value));
+            setView((v) => ({ ...v, k }));
+          }}
+          className="h-1 w-24 cursor-pointer accent-neutral-950 md:w-40"
+        />
+        <span className="t-mono min-w-[3ch] tabular-nums text-neutral-500">
+          {Math.round(view.k * 100)}%
+        </span>
+      </div>
+
+      <div
+        data-canvas-ui
         className="absolute bottom-4 right-4 z-10 flex items-center gap-0.5 bg-white/90 px-1 py-1 backdrop-blur-[2px] md:bottom-5 md:right-6"
       >
         <button
           type="button"
           aria-label="Zoom out"
-          onClick={() => zoomBy(1 / 1.3)}
+          onClick={() => zoomBy(view.k > 1 ? 1 / 1.2 : 1 / 1.5)}
           className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
         >
           −
@@ -231,7 +254,7 @@ export function Canvas({
         <button
           type="button"
           aria-label="Zoom in"
-          onClick={() => zoomBy(1.3)}
+          onClick={() => zoomBy(view.k < 1 ? 1.5 : 1.2)}
           className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
         >
           +
