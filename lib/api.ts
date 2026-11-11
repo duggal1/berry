@@ -62,14 +62,20 @@ export async function* analyzeRepo(
     headers,
     body: JSON.stringify({ url }),
   });
+  let finished = false;
   for await (const { event, data } of stream(res)) {
     if (event === "stage") yield { type: "stage", stage: Stage.parse(data) };
     else if (event === "trace") yield { type: "trace", item: TraceItem.parse(data) };
     else if (event === "analysis") yield { type: "analysis", analysis: AnalysisCore.parse(data) };
     else if (event === "prompt") yield { type: "prompt", text: Text.parse(data).text };
     else if (event === "error") throw new Error(Msg.parse(data).message);
-    else if (event === "done") yield { type: "done" };
+    else if (event === "done") {
+      finished = true;
+      yield { type: "done" };
+      break;
+    }
   }
+  if (!finished) throw new Error("The analysis stream ended before completion. Retry the analysis.");
 }
 
 export type Turn = { role: "user" | "assistant"; text: string };
