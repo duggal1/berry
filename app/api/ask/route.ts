@@ -1,5 +1,6 @@
 import { config } from "@/server/config";
 import { AskBody } from "@/server/contract";
+import { BodyTooLargeError, readBoundedJson } from "@/server/body";
 import { answerQuestion } from "@/server/ask";
 import { eventStream } from "@/server/sse";
 import { checkRateLimit, clientKey } from "@/server/limits";
@@ -17,8 +18,11 @@ export async function POST(req: Request) {
 
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = await readBoundedJson(req, 3 * 1024 * 1024);
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) {
+      return Response.json({ message: "The question or analysis is too large." }, { status: 413 });
+    }
     return Response.json({ message: "Invalid request." }, { status: 400 });
   }
   const parsed = AskBody.safeParse(body);
