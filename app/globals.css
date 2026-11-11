@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+}
+
+html {
+  background: #fff;
+  color: #0a0a0a;
+  font-family: var(--font-sans);
+  letter-spacing: -0.012em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Every interactive thing says so. */
+a,
+button,
+[role="button"],
+[role="tab"],
+summary,
+label,
+select {
+  cursor: pointer;
+}
+
+::selection {
+  background: #0a0a0a;
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid #0a0a0a;
+  outline-offset: 2px;
+}
+
+input,
+textarea {
+  caret-color: #0a0a0a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #0a0a0a;
+  animation: blink 1.2s steps(1, end) infinite;
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}
+
+@layer components {
+  .t-hero,
+  .t-h1,
+  .t-h2,
+  .t-h3 {
+    color: #000;
+    text-wrap: balance;
+  }
+  .t-hero {
+    font-weight: 600;
+    font-variation-settings: "wdth" 80;
+    line-height: 0.78;
+    letter-spacing: -0.05em;
+    font-size: clamp(3rem, 10vw, 9rem);
+  }
+  .t-h1 {
+    font-weight: 500;
+    font-variation-settings: "wdth" 80;
+    line-height: 0.92;
+    letter-spacing: -0.045em;
+    font-size: clamp(2.4rem, 6.5vw, 5.5rem);
+  }
+  .t-h2 {
+    font-weight: 700;
+    font-variation-settings: "wdth" 82;
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+    font-size: clamp(2rem, 4.4vw, 3.6rem);
+  }
+  .t-h3 {
+    font-weight: 650;
+    font-variation-settings: "wdth" 88;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-size: 1.75rem;
+  }
+  .t-lead {
+    font-size: clamp(1.15rem, 1.7vw, 1.5rem);
+    line-height: 1.4;
+    letter-spacing: -0.015em;
+    color: #6b6b6b;
+    text-wrap: pretty;
+  }
+  .t-body {
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+  .t-mono {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+}
+
