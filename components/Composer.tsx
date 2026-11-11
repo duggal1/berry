@@ -34,7 +34,10 @@ export function Composer(props: {
           rows={1}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // Physical keyboards submit with Enter; iOS/Android Return inserts
+            // a newline so multiline questions work without a Shift key.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing &&
+                window.matchMedia("(pointer: fine)").matches) {
               e.preventDefault();
               if (ready) onSend();
             }
@@ -45,7 +48,12 @@ export function Composer(props: {
         />
         <div className="flex items-center justify-between gap-4 px-4 pb-3">
           <span className="text-[12px] tracking-[-0.01em] text-neutral-400">
-            {busy ? "streaming answer" : "enter to send · shift+enter for a new line"}
+            {busy ? "streaming answer" : (
+              <>
+                <span className="hidden sm:inline">enter to send · shift+enter for a new line</span>
+                <span className="sm:hidden">tap send · Return for a new line</span>
+              </>
+            )}
           </span>
           {busy ? (
             <IconButton label="Stop" onClick={onStop}>
