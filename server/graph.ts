@@ -111,5 +111,21 @@ export function recoverEdges(
       }
     }
   }
+  // A Swift type annotation is a static dependency, not an invocation.
+  // Distinguish it from calls instead of drawing a misleading execution hop.
+  const typeUse = /(?::\s*|\[\s*|<\s*|->\s*)([A-Z][A-Za-z0-9_]*)\b/g;
+  for (const [source, text] of files) {
+    if (!source.endsWith(".swift")) continue;
+    for (const line of text.split(/\r?\n/)) {
+      const snippet = line.trim();
+      if (!snippet || snippet.length > 120 || snippet.startsWith("//") || snippet.startsWith("*")) continue;
+      const code = line.split("//", 1)[0];
+      for (const match of code.matchAll(typeUse)) {
+        const target = declarations.get(match[1]);
+        if (!target || target === source) continue;
+        add(owners.get(source), owners.get(target), "type", `type ${match[1]}`, true, source, snippet);
+      }
+    }
+  }
   return result;
 }
