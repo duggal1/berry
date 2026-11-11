@@ -31,6 +31,7 @@ const gen = rough.generator();
 
 export type RPath = { d: string; hatch: boolean };
 
+const MAX_CACHED_SHAPES = 2000;
 const cache = new Map<string, RPath[]>();
 
 function build(
@@ -51,6 +52,11 @@ function build(
     .flatMap((dr) => gen.toPaths(dr))
     .filter((p) => p.d)
     .map((p) => ({ d: p.d, hatch: color !== null && p.stroke === color }));
+  // Keep repeated diagram sessions from retaining unbounded SVG path data.
+  if (cache.size >= MAX_CACHED_SHAPES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
   cache.set(key, out);
   return out;
 }
