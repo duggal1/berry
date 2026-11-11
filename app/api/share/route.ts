@@ -1,6 +1,7 @@
 import { config, HttpError } from "@/server/config";
 import { ShareBody } from "@/server/contract";
 import { putShare } from "@/server/share";
+import { BodyTooLargeError, readBoundedJson } from "@/server/body";
 import { checkRateLimit, clientKey } from "@/server/limits";
 
 
@@ -9,15 +10,13 @@ const MAX_BODY = 2 * 1024 * 1024;
 export async function POST(req: Request) {
   const cfg = config();
 
-  const declared = Number(req.headers.get("content-length") ?? "0");
-  if (declared && declared > MAX_BODY) {
-    return Response.json({ message: "That analysis is too large to share." }, { status: 413 });
-  }
-
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = await readBoundedJson(req, MAX_BODY);
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) {
+      return Response.json({ message: "That analysis is too large to share." }, { status: 413 });
+    }
     return Response.json({ message: "Invalid request." }, { status: 400 });
   }
 
