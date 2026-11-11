@@ -1,5 +1,6 @@
 import { config, HttpError } from "@/server/config";
 import { AnalyzeBody } from "@/server/contract";
+import { BodyTooLargeError, readBoundedJson } from "@/server/body";
 import { canRead, ingest, parseRepoUrl, resolve } from "@/server/ingest";
 import type { Resolved } from "@/server/ingest";
 import { scan } from "@/server/scan";
@@ -26,8 +27,11 @@ export async function POST(req: Request) {
 
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = await readBoundedJson(req, 8 * 1024);
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) {
+      return Response.json({ message: "The request body is too large." }, { status: 413 });
+    }
     return Response.json({ message: "Invalid request." }, { status: 400 });
   }
   const parsed = AnalyzeBody.safeParse(body);
