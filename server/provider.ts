@@ -143,6 +143,7 @@ export async function* streamChat(args: {
   schemaName?: string;
   maxTokens?: number;
   effort?: Effort;
+  forceReadFile?: boolean;
   signal: AbortSignal;
 }): AsyncGenerator<StreamEvent> {
   const c = config();
@@ -151,7 +152,12 @@ export async function* streamChat(args: {
       model: c.REFLECTION_MODEL,
       messages: args.messages,
       ...(args.tools?.length
-        ? { tools: toWireTools(args.tools), tool_choice: "auto" as const }
+        ? {
+            tools: toWireTools(args.tools),
+            tool_choice: args.forceReadFile
+              ? ({ type: "function" as const, function: { name: "read_file" } } as const)
+              : ("auto" as const),
+          }
         : {}),
       ...(args.schema
         ? {
