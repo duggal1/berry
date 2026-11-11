@@ -29,6 +29,7 @@ There is no single brand accent. Every colour is a signal:
 | --------- | --------- | -------------------------- |
 | call      | `#0a0a0a` | a function call            |
 | import    | `#8a8a8a` | an import                  |
+| type      | `#8a8a8a` | a source-backed type dependency, not necessarily a runtime call |
 | data      | `#00a870` | a read or a write          |
 | event     | `#e11d74` | a message or a job         |
 
@@ -76,6 +77,7 @@ Nothing is approximately aligned. Numbers do not jitter. Layout does not shift w
   - **boundary**: dashed frame around a group of modules, with a label on its top edge
 - Arrows are hand drawn: a single V at the end of the edge, same seed logic as the shapes.
 - Edges draw with `pathLength` only after both of their end nodes have finished drawing.
+- **Type dependency links** use the existing neutral import grey. A statically observed type name alone must never be presented as a verified runtime invocation; show such links as inferred.
 - Every diagram has a text alternative: a visually hidden list of modules and edges.
 
 ## 5. Screen sequences
