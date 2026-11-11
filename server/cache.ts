@@ -3,7 +3,10 @@ import path from "node:path";
 import { AnalysisCore } from "@/lib/schema";
 import { config } from "./config";
 
+const ANALYSIS_CACHE_VERSION = 2;
+
 export type CacheRecord = {
+  version?: number;
   repo: string;
   sha: string;
   private: boolean;
@@ -31,7 +34,7 @@ export async function putCache(record: CacheRecord): Promise<void> {
   await mkdir(dir(), { recursive: true });
   await writeFile(
     path.join(dir(), `${key(record.repo, record.sha)}.json`),
-    JSON.stringify(record),
+    JSON.stringify({ ...record, version: ANALYSIS_CACHE_VERSION }),
     "utf8",
   );
 }
@@ -39,6 +42,7 @@ export async function putCache(record: CacheRecord): Promise<void> {
 export function parseCache(raw: string): CacheRecord | null {
   try {
     const value = JSON.parse(raw) as CacheRecord;
+    if (value.version !== ANALYSIS_CACHE_VERSION) return null;
     const analysis = AnalysisCore.safeParse(value.analysis);
     if (!analysis.success || typeof value.prompt !== "string") return null;
     return { ...value, analysis: analysis.data };
