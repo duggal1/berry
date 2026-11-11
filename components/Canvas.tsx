@@ -43,14 +43,21 @@ export function Canvas({
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [grabbing, setGrabbing] = useState(false);
 
-  const fit = useCallback(() => {
+  const fit = useCallback((showAll = false) => {
     const el = box.current;
     if (!el) return;
     const cw = el.clientWidth;
     const ch = el.clientHeight;
     if (!cw || !ch) return;
-    const k = clampK(Math.min(cw / w, ch / h) * 0.94);
-    setView({ x: (cw - w * k) / 2, y: (ch - h * k) / 2, k });
+    const fullScale = clampK(Math.min(cw / w, ch / h) * 0.94);
+    // At phone widths, a full-graph fit can reduce text to unreadable pixels.
+    // Start at a readable scale; the existing percent control still fits all.
+    const k = !showAll && cw < 640 ? Math.max(fullScale, 0.55) : fullScale;
+    setView({
+      x: Math.max(16, (cw - w * k) / 2),
+      y: Math.max(16, (ch - h * k) / 2),
+      k,
+    });
   }, [w, h]);
 
   // Fit whenever a new sketch arrives (or the window changes shape) until the person
@@ -139,9 +146,9 @@ export function Canvas({
       onKeyDown={(e) => {
         if (e.key === "+" || e.key === "=") zoomBy(1.25);
         else if (e.key === "-") zoomBy(1 / 1.25);
-        else if (e.key === "0") fit();
+        else if (e.key === "0") fit(true);
       }}
-      className="relative w-full touch-none select-none overflow-hidden outline-none"
+      className="relative w-full touch-pan-y select-none overflow-hidden outline-none md:touch-none"
       style={{ height, cursor: grabbing ? "grabbing" : "grab" }}
     >
       <div
@@ -179,7 +186,7 @@ export function Canvas({
           type="button"
           aria-label="Zoom out"
           onClick={() => zoomBy(1 / 1.3)}
-          className="grid size-8 place-items-center text-[19px] leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
         >
           −
         </button>
@@ -187,7 +194,7 @@ export function Canvas({
           type="button"
           onClick={() => {
             touched.current = false;
-            fit();
+            fit(true);
           }}
           className="min-w-11 px-1 text-center text-[12px] font-medium tabular-nums text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
           aria-label="Fit the whole sketch"
@@ -198,7 +205,7 @@ export function Canvas({
           type="button"
           aria-label="Zoom in"
           onClick={() => zoomBy(1.3)}
-          className="grid size-8 place-items-center text-[19px] leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
+          className="grid size-11 place-items-center text-[19px] md:size-8 leading-none text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-950"
         >
           +
         </button>
