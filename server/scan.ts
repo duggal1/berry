@@ -630,41 +630,35 @@ export function factSheetText(facts: FactSheet, maxFiles = 260): string {
   return lines.join("\n");
 }
 
-/** Does the fact sheet back a direct link between two modules? */
+/** Only mark an AI edge verified when the cited line proves that exact dependency. */
 export function supportsLink(
   facts: FactSheet,
   fromFiles: string[],
   toFiles: string[],
   toModule: Module | undefined,
   evidencePath: string,
+  evidenceSnippet: string,
 ): boolean {
+  if (!fromFiles.includes(evidencePath)) return false;
   const toSet = new Set(toFiles);
-  const fromSet = new Set(fromFiles);
 
   for (const link of facts.links) {
-    if (toSet.has(link.to) && fromSet.has(link.from)) return true;
-  }
-
-  if (toModule) {
-    const toSymbols = new Set<string>();
-    for (const f of toFiles) for (const s of facts.symbols[f] ?? []) toSymbols.add(s);
-    const calledHere = facts.calls[evidencePath] ?? [];
-    for (const c of calledHere) if (toSymbols.has(c)) return true;
-
-    if (toModule.kind === "external") {
-      const services = facts.services.filter((s) =>
-        s.name.toLowerCase().includes(toModule.name.toLowerCase().split(/\s+/)[0] ?? ""),
-      );
-      for (const s of services) {
-        for (const f of fromFiles) {
-          for (const spec of facts.imports[f] ?? []) {
-            const pkg = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
-            if (s.packages.includes(pkg)) return true;
-          }
-        }
-      }
+    if (link.from === evidencePath && toSet.has(link.to) && evidenceSnippet.includes(link.specifier)) {
+      return true;
     }
   }
 
+  if (toModule?.kind === "external") {
+    const firstName = toModule.name.toLowerCase().split(/\s+/)[0];
+    const services = facts.services.filter((s) => s.name.toLowerCase().includes(firstName));
+    for (const spec of facts.imports[evidencePath] ?? []) {
+      if (!evidenceSnippet.includes(spec)) continue;
+      const pkg = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
+      if (services.some((s) => s.packages.includes(pkg))) return true;
+    }
+  }
+
+  // A matching function name alone is not proof of a particular callee.
+  // Without type-resolution, such edges remain inferred.
   return false;
 }

@@ -52,7 +52,7 @@ function snippetAppears(file: string, snippet: string): boolean {
   const trimmed = snippet.trim();
   if (trimmed.length > 120) return false;
   if (trimmed.includes("\n")) return false;
-  return file.split(/\r?\n/).some((line) => line.includes(trimmed));
+  return file.split(/\r?\n/).some((line) => line.trim() === trimmed);
 }
 
 function fallbackSummary(modules: Module[], repo: string): string[] {
@@ -182,7 +182,7 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     if (!inferred) {
       const from = byId.get(fromId)!;
       const to = byId.get(toId)!;
-      const supported = supportsLink(facts, from.files, to.files, to, path);
+      const supported = supportsLink(facts, from.files, to.files, to, path, snippet);
       if (!supported) {
         inferred = true;
         repaired += 1;
