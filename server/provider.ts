@@ -199,7 +199,8 @@ export async function* streamChat(args: {
       const index = frag.index ?? 0;
       const current = calls.get(index) ?? { id: "", name: "", arguments: "" };
       if (frag.id) current.id = frag.id;
-      if (frag.function?.name) current.name = frag.function.name;
+      // Function names may arrive in multiple streamed fragments.
+      if (frag.function?.name) current.name += frag.function.name;
       if (frag.function?.arguments) current.arguments += frag.function.arguments;
       calls.set(index, current);
     }
