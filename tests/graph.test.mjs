@@ -87,3 +87,41 @@ test("rejects source excerpts longer than the evidence limit", () => {
   );
   assert.equal(result.length, 0);
 });
+
+test("recovers Swift static method calls as inferred source-backed links", () => {
+  const modules = [
+    makeModule("watchdog", ["Purge/Scanner/WatchdogRunner.swift"]),
+    makeModule("scanner", ["Purge/Scanner/Scanner.swift"]),
+    makeModule("cleaner", ["Purge/Scanner/Cleaner.swift"]),
+  ];
+  const lines = [
+    "let cats = await Scanner.scanWatchdog(config: cfg, hasFDA: hasFDA)",
+    "let (outcome, _) = await Cleaner.clean(items: toClean)",
+  ];
+  const result = recoverEdges(modules, [], facts({
+    symbols: {
+      "Purge/Scanner/Scanner.swift": ["Scanner"],
+      "Purge/Scanner/Cleaner.swift": ["Cleaner"],
+    },
+    calls: { "Purge/Scanner/WatchdogRunner.swift": ["scanWatchdog", "clean"] },
+  }), new Map([
+    ["Purge/Scanner/WatchdogRunner.swift", lines.join("\n")],
+    ["Purge/Scanner/Scanner.swift", "enum Scanner {}"],
+    ["Purge/Scanner/Cleaner.swift", "enum Cleaner {}"],
+  ]));
+  assert.deepEqual(result.map(e => [e.from, e.to, e.label, e.inferred]), [
+    ["watchdog", "scanner", "calls scanWatchdog", true],
+    ["watchdog", "cleaner", "calls clean", true],
+  ]);
+  assert.equal(result[0].evidence.snippet, lines[0]);
+  assert.equal(result[1].evidence.snippet, lines[1]);
+});
+
+test("Swift static-call inference does not create edges from comments", () => {
+  const result = recoverEdges(
+    [makeModule("watchdog", ["Watchdog.swift"]), makeModule("scanner", ["Scanner.swift"])],
+    [], facts({ symbols: { "Scanner.swift": ["Scanner"] } }),
+    new Map([["Watchdog.swift", "// Scanner.scanWatchdog()"], ["Scanner.swift", "enum Scanner {}"]]),
+  );
+  assert.equal(result.length, 0);
+});
