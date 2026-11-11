@@ -78,20 +78,16 @@ const SketchNode = memo(function SketchNode(p: {
   const external = m.kind === "external";
   const datastore = m.kind === "datastore";
   const logo = logoUrl(m.tech);
-  const [hasLogo, setHasLogo] = useState(false);
+  const [loadedLogo, setLoadedLogo] = useState<string | null>(null);
+  const hasLogo = Boolean(logo && loadedLogo === logo);
   useEffect(() => {
-    if (!logo) {
-      setHasLogo(false);
-      return;
-    }
+    if (!logo) return;
     let live = true;
     const img = new Image();
-    img.onload = () => live && setHasLogo(true);
-    img.onerror = () => live && setHasLogo(false);
+    img.onload = () => { if (live) setLoadedLogo(logo); };
+    img.onerror = () => { if (live) setLoadedLogo(null); };
     img.src = logo;
-    return () => {
-      live = false;
-    };
+    return () => { live = false; };
   }, [logo]);
   const drawn = useDrawn(play, p.delay);
   const dly = reduce ? 0 : p.delay;
