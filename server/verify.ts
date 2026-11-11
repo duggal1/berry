@@ -2,6 +2,7 @@ import { AnalysisCore } from "@/lib/schema";
 import type { Edge, Module, Step } from "@/lib/schema";
 import type { Repository } from "./ingest";
 import { supportsLink } from "./scan";
+import { recoverEdges } from "./graph";
 import type { FactSheet } from "./scan";
 
 export type VerifyResult = {
@@ -205,7 +206,8 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     edgeAliases.set(slug(raw.id), id);
   }
 
-  const edgeById = new Map(edges.map((e) => [e.id, e]));
+  const completeEdges = recoverEdges(limited, edges, facts, repo.files);
+  const edgeById = new Map(completeEdges.map((e) => [e.id, e]));
   const flow: Step[] = [];
   const stepIds = new Set<string>();
 
@@ -262,7 +264,7 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     summary: summary.length ? summary : fallbackSummary(limited, repo.repo),
     stack,
     modules: limited,
-    edges,
+    edges: completeEdges,
     flow,
     interview,
   });
