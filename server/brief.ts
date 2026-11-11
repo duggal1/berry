@@ -22,7 +22,7 @@ export async function* writeBrief(
         "FACT SHEET",
         factSheetText(facts, 120),
         "",
-        "Write the brief now. Plain text only.",
+        "Write only the GitHub-flavoured Markdown briefing; no surrounding code fence.",
       ].join("\n"),
     },
   ];
