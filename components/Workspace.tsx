@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { shareAnalysis } from "@/lib/api";
 import { useTrace } from "@/lib/hooks";
 import { EASE_QUINT } from "@/lib/motion";
@@ -22,6 +22,7 @@ const TABS: { id: Tab; label: string; color: string }[] = [
 ];
 
 function Underline({ id, color }: { id: string; color: string }) {
+  const reduce = useReducedMotion() ?? false;
   const paths = useMemo(() => polyPaths(`ul:${id}`, [[0, 4], [80, 4]]), [id]);
   return (
     <svg
@@ -39,9 +40,9 @@ function Underline({ id, color }: { id: string; color: string }) {
           strokeWidth={4}
           strokeLinecap="square"
           vectorEffect="non-scaling-stroke"
-          initial={{ pathLength: 0 }}
+          initial={{ pathLength: reduce ? 1 : 0 }}
           animate={{ pathLength: 1 }}
-          transition={{ duration: 0.48, ease: EASE_QUINT }}
+          transition={reduce ? { duration: 0 } : { duration: 0.48, ease: EASE_QUINT }}
         />
       ))}
     </svg>
