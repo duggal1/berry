@@ -40,6 +40,8 @@ export function Canvas({
     moved: boolean;
   } | null>(null);
   const touched = useRef(false);
+  const panFrame = useRef(0);
+  const pendingPan = useRef<{ x: number; y: number } | null>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [grabbing, setGrabbing] = useState(false);
 
@@ -96,6 +98,10 @@ export function Canvas({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomOnWheel]);
 
+  useEffect(() => () => {
+    if (panFrame.current) cancelAnimationFrame(panFrame.current);
+  }, []);
+
   const zoomBy = (f: number) => {
     const el = box.current;
     if (!el) return;
@@ -116,21 +122,42 @@ export function Canvas({
     setGrabbing(true);
   }
 
+  // Pointer events can arrive faster than the display refreshes. Apply at most
+  // one compositor transform per animation frame instead of rerendering per event.
+  function queuePan(x: number, y: number) {
+    pendingPan.current = { x, y };
+    if (panFrame.current) return;
+    panFrame.current = requestAnimationFrame(() => {
+      panFrame.current = 0;
+      const next = pendingPan.current;
+      pendingPan.current = null;
+      if (next) setView((v) => ({ ...v, ...next }));
+    });
+  }
+
   function move(e: RPointerEvent<HTMLDivElement>) {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
-    if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
+    if (d.moved) {
+      touched.current = true;
+      queuePan(d.ox + dx, d.oy + dy);
+    }
   }
 
   function up(e: RPointerEvent<HTMLDivElement>) {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     drag.current = null;
+    if (panFrame.current) cancelAnimationFrame(panFrame.current);
+    panFrame.current = 0;
+    const last = pendingPan.current;
+    pendingPan.current = null;
+    if (last) setView((v) => ({ ...v, ...last }));
     setGrabbing(false);
-    if (!d.moved) onBackgroundClick?.();
+    if (!d.moved && e.type !== "pointercancel") onBackgroundClick?.();
   }
 
   return (
