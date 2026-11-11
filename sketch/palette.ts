@@ -17,6 +17,7 @@ export const ROLE: Record<Module["role"], string> = {
 export const KIND: Record<Edge["kind"], string> = {
   call: "#0a0a0a",
   import: "#8a8a8a",
+  type: "#8a8a8a",
   data: "#00a870",
   event: "#e11d74",
 };
