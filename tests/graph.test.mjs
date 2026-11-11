@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { recoverEdges } from "../server/graph.ts";
 
-const module = (id, files) => ({
+const makeModule = (id, files) => ({
   id, name: id, role: "core", kind: "service",
   purpose: id, path: ".", files, group: "",
 });
@@ -11,7 +11,7 @@ const facts = (override = {}) => ({
 });
 
 test("adds a verified import edge with the exact source line", () => {
-  const modules = [module("app", ["app.ts"]), module("cleaner", ["cleaner.ts"])];
+  const modules = [makeModule("app", ["app.ts"]), makeModule("cleaner", ["cleaner.ts"])];
   const file = 'import { clean } from "./cleaner";';
   const result = recoverEdges(modules, [], facts({
     links: [{ from: "app.ts", to: "cleaner.ts", specifier: "./cleaner" }],
@@ -23,7 +23,7 @@ test("adds a verified import edge with the exact source line", () => {
 });
 
 test("recovers a Swift constructor reference but labels it inferred", () => {
-  const modules = [module("watchdog", ["Watchdog.swift"]), module("cleaner", ["Cleaner.swift"])];
+  const modules = [makeModule("watchdog", ["Watchdog.swift"]), makeModule("cleaner", ["Cleaner.swift"])];
   const result = recoverEdges(modules, [], facts({
     symbols: { "Cleaner.swift": ["Cleaner"] },
     calls: { "Watchdog.swift": ["Cleaner"] },
@@ -38,9 +38,9 @@ test("recovers a Swift constructor reference but labels it inferred", () => {
 
 test("does not guess a connection without evidence or for ambiguous ownership", () => {
   const modules = [
-    module("first", ["shared.ts"]),
-    module("second", ["shared.ts"]),
-    module("target", ["target.ts"]),
+    makeModule("first", ["shared.ts"]),
+    makeModule("second", ["shared.ts"]),
+    makeModule("target", ["target.ts"]),
   ];
   const result = recoverEdges(modules, [], facts({
     links: [{ from: "shared.ts", to: "target.ts", specifier: "./target" }],
@@ -55,7 +55,7 @@ test("does not guess a connection without evidence or for ambiguous ownership", 
 
 test("does not guess relationships from symbols merely declared nearby", () => {
   const result = recoverEdges(
-    [module("a", ["a.swift"]), module("b", ["b.swift"])],
+    [makeModule("a", ["a.swift"]), makeModule("b", ["b.swift"])],
     [], facts({ symbols: { "b.swift": ["Cleaner"] }, calls: { "a.swift": ["Cleaner"] } }),
     new Map([["a.swift", "// Cleaner() is a comment"], ["b.swift", "struct Cleaner {}"]]),
   );
@@ -68,7 +68,7 @@ test("promotes an inferred edge when a real import supports it without changing 
     inferred: true, evidence: { path: "app.ts", snippet: "old" },
   }];
   const result = recoverEdges(
-    [module("app", ["app.ts"]), module("cleaner", ["cleaner.ts"])],
+    [makeModule("app", ["app.ts"]), makeModule("cleaner", ["cleaner.ts"])],
     original,
     facts({ links: [{ from: "app.ts", to: "cleaner.ts", specifier: "./cleaner" }] }),
     new Map([["app.ts", 'import x from "./cleaner";']]),
@@ -81,7 +81,7 @@ test("promotes an inferred edge when a real import supports it without changing 
 
 test("rejects source excerpts longer than the evidence limit", () => {
   const result = recoverEdges(
-    [module("app", ["app.ts"]), module("cleaner", ["cleaner.ts"])],
+    [makeModule("app", ["app.ts"]), makeModule("cleaner", ["cleaner.ts"])],
     [], facts({ links: [{ from: "app.ts", to: "cleaner.ts", specifier: "./cleaner" }] }),
     new Map([["app.ts", 'import x from "./cleaner"; // ' + "x".repeat(125)]]),
   );
