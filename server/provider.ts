@@ -179,7 +179,7 @@ export async function* streamChat(args: {
   let content = "";
   let reasoning = "";
   let role = "assistant";
-  let finishReason = "stop";
+  let finishReason: string | null = null;
   let usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
   for await (const chunk of stream) {
@@ -213,7 +213,17 @@ export async function* streamChat(args: {
     if (choice.finish_reason) finishReason = choice.finish_reason;
   }
 
-  for (const call of calls.values()) yield { type: "tool_call", call };
+  if (!finishReason) {
+    throw new Error("The model stream ended without a final completion status.");
+  }
+  const ids = new Set<string>();
+  for (const call of calls.values()) {
+    if (!call.id || !call.name || ids.has(call.id)) {
+      throw new Error("The provider returned an incomplete or duplicate tool call.");
+    }
+    ids.add(call.id);
+    yield { type: "tool_call", call };
+  }
 
   const message = {
     role,
