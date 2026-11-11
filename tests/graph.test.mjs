@@ -125,3 +125,25 @@ test("Swift static-call inference does not create edges from comments", () => {
   );
   assert.equal(result.length, 0);
 });
+
+test("Swift model annotations become inferred type links, not runtime calls", () => {
+  const source = "static func scan() async -> [ScannedItem] { [] }";
+  const result = recoverEdges(
+    [makeModule("scanner", ["Scanner.swift"]), makeModule("models", ["Junk.swift"])],
+    [], facts({ symbols: { "Junk.swift": ["ScannedItem"] } }),
+    new Map([["Scanner.swift", source], ["Junk.swift", "struct ScannedItem {}"]]),
+  );
+  assert.equal(result.length, 1);
+  assert.deepEqual([result[0].from, result[0].to, result[0].kind, result[0].inferred],
+    ["scanner", "models", "type", true]);
+  assert.equal(result[0].evidence.snippet, source);
+});
+
+test("Swift comment-only annotations do not produce inferred edges", () => {
+  const result = recoverEdges(
+    [makeModule("scanner", ["Scanner.swift"]), makeModule("models", ["Junk.swift"])],
+    [], facts({ symbols: { "Junk.swift": ["ScannedItem"] } }),
+    new Map([["Scanner.swift", "// let x: [ScannedItem]"], ["Junk.swift", "struct ScannedItem {}"]]),
+  );
+  assert.equal(result.length, 0);
+});
