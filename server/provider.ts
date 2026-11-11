@@ -112,10 +112,22 @@ export async function* streamText(args: {
     { signal: args.signal },
   );
 
+  let finished = false;
   for await (const chunk of stream) {
-    const text = chunk.choices[0]?.delta?.content;
+    const choice = chunk.choices[0];
+    const text = choice?.delta?.content;
     if (text) yield text;
+    if (choice?.finish_reason) {
+      if (choice.finish_reason === "length") {
+        throw new Error("The provider reached its output token limit before finishing.");
+      }
+      if (choice.finish_reason !== "stop") {
+        throw new Error(`The provider stopped unexpectedly (${choice.finish_reason}).`);
+      }
+      finished = true;
+    }
   }
+  if (!finished) throw new Error("The provider stream ended without a completion status.");
 }
 
 export type ToolCallDraft = { id: string; name: string; arguments: string };
