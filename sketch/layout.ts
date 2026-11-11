@@ -12,13 +12,81 @@ export type PNode = {
   m: Module;
   depth: number;
 };
-export type PEdge = { e: Edge; pts: [number, number][]; d: string; lx: number; ly: number };
+export type PEdge = {
+  e: Edge;
+  pts: [number, number][];
+  d: string;
+  lx: number;
+  ly: number;
+  /** Unit vector along the longest segment, so a label can sit beside the wire, not on it. */
+  dir: [number, number];
+};
 export type PGroup = { name: string; x: number; y: number; w: number; h: number };
 export type Laid = { w: number; h: number; nodes: PNode[]; edges: PEdge[]; groups: PGroup[] };
 
 const elk = new ELK();
 
-export const labelW = (s: string) => Math.ceil(s.length * 6.7) + 12;
+/** The edge tag: mono 11px plus 16px of padding either side. */
+export const LABEL_H = 22;
+export const labelWidth = (s: string) => Math.ceil(s.length * 6.5) + 22;
+
+type Rect = { x: number; y: number; w: number; h: number };
+
+/** Signed gap between two boxes: positive means clear space, negative means overlap. */
+function clearance(a: Rect, b: Rect) {
+  const dx = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+  const dy = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+  if (dx > 0 || dy > 0) return Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
+  return Math.max(dx, dy);
+}
+
+/**
+ * Put the tag on the wire, at the point along it with the most room. Centring it on
+ * the midpoint of the longest segment drops it straight onto a module box whenever a
+ * wire hugs one, which is what makes the sketch look broken.
+ */
+function placeLabel(p: PEdge, nodes: Rect[], taken: Rect[]) {
+  const w = labelWidth(p.e.label || p.e.kind);
+  const h = LABEL_H;
+  let bestScore = -Infinity;
+  let bx = p.lx;
+  let by = p.ly;
+  let bestGap = -Infinity;
+
+  const consider = (x: number, y: number) => {
+    const rect = { x: x - w / 2, y: y - h / 2, w, h };
+    let gap = 999;
+    for (const n of nodes) gap = Math.min(gap, clearance(rect, n));
+    for (const l of taken) gap = Math.min(gap, clearance(rect, l));
+    // Prefer the visual middle, but only after clearance: a clear spot 80px away
+    // beats a tag sitting on a border.
+    const score = Math.min(gap, 48) - Math.hypot(x - p.lx, y - p.ly) * 0.06;
+    if (score > bestScore) {
+      bestScore = score;
+      bestGap = gap;
+      bx = x;
+      by = y;
+    }
+  };
+
+  const pts = p.pts;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1];
+    const [x1, y1] = pts[i];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    // Keep the tag clear of the node ports and of the arrowhead.
+    const from = Math.min(18, len / 4);
+    const to = len - Math.min(20, len / 4);
+    for (let d = from; d <= to; d += 5) {
+      const t = d / len;
+      consider(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+    }
+  }
+
+  p.lx = bx;
+  p.ly = by;
+  if (bestGap > 2) taken.push({ x: bx - w / 2, y: by - h / 2, w, h });
+}
 
 function size(m: Module) {
   const base = Math.max(m.name.length * 9.6, m.path.length * 7) + 40 + (m.kind === "queue" ? 36 : 0);
@@ -29,6 +97,11 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
   const ids = new Set(modules.map((m) => m.id));
   const real = edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
 
+  // A tag sits on the wire between two layers, so the layers have to be at least as
+  // far apart as the widest tag. Otherwise the badge is forced to spill onto a box.
+  const widest = real.reduce((n, e) => Math.max(n, labelWidth(e.label || e.kind)), 0);
+  const layerGap = Math.max(112, Math.min(200, widest + 28));
+
   const root: ElkNode = {
     id: "root",
     layoutOptions: {
@@ -36,7 +109,7 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.nodeNode": "56",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "112",
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(layerGap),
       "elk.layered.spacing.edgeNodeBetweenLayers": "32",
       "elk.padding": "[top=48,left=48,bottom=48,right=48]",
     },
@@ -68,6 +141,7 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
     let best = 0;
     let lx = pts[0][0];
     let ly = pts[0][1];
+    let dir: [number, number] = [1, 0];
     for (let i = 1; i < pts.length; i++) {
       const len =
         Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]);
@@ -75,6 +149,10 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
         best = len;
         lx = (pts[i][0] + pts[i - 1][0]) / 2;
         ly = (pts[i][1] + pts[i - 1][1]) / 2;
+        const dx = pts[i][0] - pts[i - 1][0];
+        const dy = pts[i][1] - pts[i - 1][1];
+        const mag = Math.hypot(dx, dy) || 1;
+        dir = [dx / mag, dy / mag];
       }
     }
     return [
@@ -83,10 +161,16 @@ export async function layout(modules: Module[], edges: Edge[]): Promise<Laid> {
         pts,
         lx,
         ly,
+        dir,
         d: pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join(" "),
       },
     ];
   });
+
+  // Place the tags last, so each one can see the boxes and the tags already placed.
+  const nodeRects: Rect[] = nodes.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h }));
+  const taken: Rect[] = [];
+  for (const p of pe) placeLabel(p, nodeRects, taken);
 
   const groups: PGroup[] = [...new Set(modules.map((m) => m.group).filter(Boolean))].flatMap(
     (name) => {

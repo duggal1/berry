@@ -72,14 +72,23 @@ export function verify(core: AnalysisCore, repo: Repository, facts: FactSheet): 
     }
 
     const name = firstWords(raw.name ?? id, 3);
+
+    // An outside service has no files in this repo. If the model listed files, it is not
+    // external, and the sketch must draw it as a real module.
+    let kind = raw.kind;
+    if (kind === "external" && keptFiles.length > 0) {
+      kind = "service";
+      repaired += 1;
+    }
+
     modules.push({
       id,
       name,
       role: raw.role,
-      kind: raw.kind,
+      kind,
       purpose: raw.purpose ?? "",
-      path: path || (external ? "external" : "."),
-      files: keptFiles,
+      path: path || (kind === "external" ? "external" : "."),
+      files: kind === "external" ? [] : keptFiles,
       group: raw.group ?? "",
     });
     moduleIds.add(id);

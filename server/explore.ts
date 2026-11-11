@@ -3,8 +3,10 @@ import { analysisJsonSchema } from "./contract";
 import { config } from "./config";
 import type { Repository } from "./ingest";
 import { prompt } from "./prompts";
-import { chat } from "./provider";
+import { streamChat } from "./provider";
 import type { ToolSpec, Usage, Wire } from "./provider";
+import { toolTrace } from "./trace";
+import type { TracePayload } from "./trace";
 import { factSheetText } from "./scan";
 import type { FactSheet } from "./scan";
 
@@ -199,6 +201,7 @@ export async function explore(args: {
   feedback?: string[];
   signal: AbortSignal;
   onProgress?: (detail: string) => void;
+  onTrace?: (trace: TracePayload) => void;
 }): Promise<ExploreResult> {
   const cfg = config();
   const tools = toolSpecs();
@@ -228,47 +231,102 @@ export async function explore(args: {
   let toolCalls = 0;
   let last: string | null = null;
 
-  for (; rounds < cfg.MAX_TOOL_ROUNDS; rounds++) {
-    const result = await chat({
+  /** One streamed round: reasoning, tool calls, or the final answer. */
+  async function runRound(withTools: boolean): Promise<{
+    finishReason: string;
+    message: ReturnType<typeof buildMessage>;
+    content: string;
+    usage: Usage;
+    calls: { id: string; name: string; arguments: string }[];
+  }> {
+    let content = "";
+    let reasoning = "";
+    let finishReason = "stop";
+    let usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const calls: { id: string; name: string; arguments: string }[] = [];
+    const thinkId = `think-${rounds + 1}`;
+
+    for await (const ev of streamChat({
       messages,
-      tools,
+      tools: withTools ? tools : undefined,
       schema: analysisJsonSchema,
       schemaName: "analysis",
       maxTokens: 16_000,
       effort: "high",
       signal: args.signal,
-    });
+    })) {
+      if (ev.type === "reasoning") {
+        reasoning += ev.text;
+        args.onTrace?.({
+          id: thinkId,
+          kind: "think",
+          label: "Thinking",
+          text: ev.text,
+          done: false,
+        });
+      } else if (ev.type === "content") {
+        content += ev.text;
+      } else if (ev.type === "tool_call") {
+        calls.push(ev.call);
+      } else {
+        finishReason = ev.finishReason;
+        usage = ev.usage;
+        budget.tokens += usage.totalTokens;
+      }
+    }
 
-    budget.tokens += result.usage.totalTokens;
+    if (reasoning) {
+      args.onTrace?.({ id: thinkId, kind: "think", label: "Thinking", text: "", done: true });
+    }
+
+    return {
+      finishReason,
+      content,
+      calls,
+      usage,
+      message: buildMessage(reasoning, content, calls),
+    };
+  }
+
+  for (; rounds < cfg.MAX_TOOL_ROUNDS; rounds++) {
+    const result = await runRound(true);
+
     args.onProgress?.(`round ${rounds + 1}, ${result.finishReason}`);
 
-    if (result.finishReason === "tool_calls" && result.message.tool_calls?.length) {
+    if (result.finishReason === "tool_calls" && result.calls.length) {
       messages.push(result.message as unknown as Wire);
-      for (const call of result.message.tool_calls) {
-        if (call.type !== "function") continue;
+      for (const call of result.calls) {
         toolCalls += 1;
-        const content = runTool(call.function.name, call.function.arguments, args.repo, args.facts);
+        const trace = toolTrace(call.id || `tool-${toolCalls}`, call.name, call.arguments);
+        args.onTrace?.({
+          id: call.id || `tool-${toolCalls}`,
+          kind: trace.kind,
+          label: trace.label,
+          text: "",
+          done: false,
+        });
+        const content = runTool(call.name, call.arguments, args.repo, args.facts);
         messages.push({ role: "tool", tool_call_id: call.id, content });
+        args.onTrace?.({
+          id: call.id || `tool-${toolCalls}`,
+          kind: trace.kind,
+          label: trace.label,
+          text: "",
+          done: true,
+        });
       }
       if (budget.tokens > cfg.MAX_JOB_TOKENS) break;
       continue;
     }
 
-    if (result.message.content) last = result.message.content;
+    if (result.content) last = result.content;
     break;
   }
 
   if (!last) {
-    const result = await chat({
-      messages,
-      schema: analysisJsonSchema,
-      schemaName: "analysis",
-      maxTokens: 16_000,
-      effort: "high",
-      signal: args.signal,
-    });
+    const result = await runRound(false);
     budget.tokens += result.usage.totalTokens;
-    last = result.message.content;
+    last = result.content;
   }
 
   if (!last) throw new Error("The model did not produce an analysis.");
@@ -282,5 +340,23 @@ export async function explore(args: {
     },
     rounds: rounds + 1,
     toolCalls,
+  };
+}
+
+/** Rebuild the assistant turn exactly as the provider sent it. */
+function buildMessage(
+  reasoning: string,
+  content: string,
+  calls: { id: string; name: string; arguments: string }[],
+) {
+  return {
+    role: "assistant",
+    content: content || null,
+    reasoning_content: reasoning || "(no reasoning returned)",
+    tool_calls: calls.map((c) => ({
+      id: c.id,
+      type: "function",
+      function: { name: c.name, arguments: c.arguments },
+    })),
   };
 }

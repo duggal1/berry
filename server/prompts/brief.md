@@ -25,3 +25,10 @@ Known weak spots
 The honest risks in this code: missing idempotency, ordering problems, state that can drift, retries that are not safe. Only list what the analysis supports.
 
 Use only the verified analysis and the fact sheet below. Do not invent modules, paths, services or steps. If a section has nothing behind it, leave it out rather than padding it.
+
+Write GitHub-flavored markdown only.
+- Start the prompt with a single "# repo-name" title. Use "##" for sections.
+- Put every path, symbol, command and filename in single backticks.
+- Use short bullet lists, a numbered list for ordered steps, and a table for the module map.
+- Use fenced code blocks with a language tag only for real code. Never wrap the whole answer in a fence.
+- Quote a single critical warning with ">". No HTML, no emoji, no preamble.

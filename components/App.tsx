@@ -6,10 +6,12 @@ import { EXAMPLE } from "@/lib/fixture";
 import { useAnalysisRun, useRoute } from "@/lib/hooks";
 import type { Analysis } from "@/lib/schema";
 import { getAnalysis, saveAnalysis } from "@/lib/store";
+import { INK } from "@/sketch/palette";
 import { Header } from "./Header";
 import { Home } from "./Home";
 import { Thinking } from "./Thinking";
 import { Workspace } from "./Workspace";
+import { wipe } from "./ui";
 
 function Message({ title, body }: { title: string; body: string }): ReactNode {
   return (
@@ -18,7 +20,8 @@ function Message({ title, body }: { title: string; body: string }): ReactNode {
       <p className="t-lead mt-5 max-w-[36rem]">{body}</p>
       <a
         href="#/"
-        className="mt-8 inline-flex h-11 items-center bg-neutral-950 px-5 text-[16px] font-medium tracking-tight text-white transition-colors duration-100 hover:bg-neutral-700"
+        style={wipe(INK)}
+        className="btn mt-8 inline-flex h-11 items-center bg-neutral-950 px-5 text-[16px] font-medium tracking-tight text-white transition-colors duration-100 hover:text-white"
       >
         Explain a repo
       </a>
@@ -41,6 +44,7 @@ function RunInner({
     <>
       <Thinking
         stages={run.stages}
+        trace={run.trace}
         status={run.status}
         error={run.error}
         compact={has}

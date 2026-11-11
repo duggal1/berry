@@ -106,6 +106,7 @@ export async function POST(req: Request) {
       signal: req.signal,
       onProgress: (detail) =>
         send("stage", { id: "explore", label: "Exploring", detail: `The agent is reading the repository. ${detail}.` }),
+      onTrace: (trace) => send("trace", trace),
     });
 
     send("stage", {
@@ -126,6 +127,7 @@ export async function POST(req: Request) {
         facts,
         feedback: checked.failures.slice(0, 12),
         signal: req.signal,
+        onTrace: (trace) => send("trace", trace),
       });
       checked = verify(explored.analysis, repo, facts);
     }

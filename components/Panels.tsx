@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "motion/react";
 import { askRepo } from "@/lib/api";
 import type { Turn } from "@/lib/api";
+import { EASE_QUINT } from "@/lib/motion";
 import { slug } from "@/lib/repo";
 import type { Analysis, Step } from "@/lib/schema";
-import { ROLE } from "@/sketch/palette";
+import { INK, ROLE } from "@/sketch/palette";
 import { Accordion } from "./Accordion";
-import { Button, Chip } from "./ui";
+import { Composer } from "./Composer";
+import { Markdown } from "./Markdown";
+import { Button, Chip, Pulse, Segmented, wipe } from "./ui";
 
 export function SummaryPane({
   analysis,
@@ -41,7 +45,7 @@ export function SummaryPane({
                 </span>
                 <span className="mt-1 block text-[16px] leading-[1.45] text-neutral-600">{m.purpose}</span>
               </span>
-              <span className="t-mono mt-1 hidden shrink-0 text-neutral-400 sm:block">{m.path}</span>
+              <span className="t-mono mt-1 hidden shrink-0 text-neutral-500 sm:block">{m.path}</span>
             </button>
           </li>
         ))}
@@ -94,6 +98,7 @@ export function FlowPane({
 
 export function PromptPane({ analysis, running }: { analysis: Analysis; running: boolean }) {
   const [copied, setCopied] = useState(false);
+  const [view, setView] = useState<"rendered" | "raw">("rendered");
   const text = analysis.codingPrompt;
 
   async function copy() {
@@ -114,19 +119,46 @@ export function PromptPane({ analysis, running }: { analysis: Analysis; running:
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
+        <Segmented
+          id="prompt-view"
+          value={view}
+          onChange={setView}
+          options={[
+            { id: "rendered", label: "Rendered" },
+            { id: "raw", label: "Raw" },
+          ]}
+        />
         <Button onClick={copy} disabled={!text}>
           {copied ? "Copied" : "Copy prompt"}
         </Button>
         <Button tone="quiet" onClick={download} disabled={!text}>
           Download .md
         </Button>
-        <span className="text-[15px] text-neutral-500">
-          Paste it into your coding agent before you ask for changes.
-        </span>
       </div>
-      <pre className="t-mono mt-5 max-h-[640px] overflow-auto whitespace-pre-wrap bg-neutral-100 p-6 text-[14px] leading-[1.7] text-neutral-800">
-        {text || (running ? "Writing the prompt." : "This analysis has no prompt.")}
-      </pre>
+      <p className="mt-3 text-[15px] tracking-[-0.01em] text-neutral-500">
+        Paste it into your coding agent before you ask for changes.
+      </p>
+
+      <div className="mt-6 max-h-[720px] overflow-auto bg-neutral-50 px-6 py-8 md:px-10 md:py-10">
+        {!text ? (
+          <Pulse label={running ? "Writing the prompt" : "This analysis has no prompt"} />
+        ) : (
+          <motion.div
+            key={view}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: EASE_QUINT }}
+          >
+            {view === "rendered" ? (
+              <Markdown text={text} />
+            ) : (
+              <pre className="whitespace-pre-wrap font-mono text-[13.5px] font-medium leading-[1.75] tracking-[-0.01em] text-neutral-800 antialiased">
+                {text}
+              </pre>
+            )}
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }
@@ -214,51 +246,40 @@ export function AskPane({ analysis, demo }: { analysis: Analysis; demo: boolean 
             <button
               key={s}
               type="button"
-              onClick={() => send(s)}
-              className="bg-neutral-100 px-4 py-3 text-left text-[16px] font-medium tracking-tight transition-colors duration-100 hover:bg-neutral-200"
+              onClick={() => void send(s)}
+              style={wipe(INK)}
+              className="btn bg-neutral-100 px-4 py-3 text-left text-[16px] font-medium tracking-[-0.02em] transition-colors delay-100 duration-200 hover:text-white"
             >
               {s}
             </button>
           ))}
         </div>
       )}
-      <div className="space-y-6">
-        {msgs.map((m, i) => (
-          <p
-            key={i}
-            className={`whitespace-pre-wrap leading-[1.55] ${
-              m.role === "user" ? "text-[22px] font-semibold tracking-tight" : "text-[18px] text-neutral-700"
-            }`}
-          >
-            {m.text || "…"}
-          </p>
-        ))}
+      <div className="space-y-10">
+        {msgs.map((m, i) =>
+          m.role === "user" ? (
+            <p key={i} className="text-[24px] font-semibold leading-[1.15] tracking-[-0.03em]">
+              {m.text}
+            </p>
+          ) : m.text ? (
+            <Markdown key={i} text={m.text} />
+          ) : busy && i === msgs.length - 1 ? (
+            <Pulse key={i} label="Reading the repo" />
+          ) : (
+            <p key={i} className="t-mono text-neutral-400">
+              stopped
+            </p>
+          ),
+        )}
       </div>
       {err && <p className="mt-5 text-[16px] font-medium">{err}</p>}
-      <form
-        className="mt-8 flex items-end gap-2 bg-neutral-100 p-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-neutral-950"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send(q);
-        }}
-      >
-        <textarea
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send(q);
-            }
-          }}
-          rows={2}
-          placeholder="Ask about any module or link"
-          className="min-h-14 flex-1 resize-none bg-transparent px-3 py-2 text-[17px] outline-none placeholder:text-neutral-400"
-        />
-        <Button type="submit" disabled={busy || !q.trim()}>
-          Ask
-        </Button>
-      </form>
+      <Composer
+        value={q}
+        onChange={setQ}
+        onSend={() => void send(q)}
+        onStop={() => abort.current?.abort()}
+        busy={busy}
+      />
     </div>
   );
 }

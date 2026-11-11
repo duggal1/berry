@@ -1,6 +1,6 @@
 import type { Analysis, Module } from "@/lib/schema";
 import { ROLE } from "@/sketch/palette";
-import { Chip, CloseIcon, IconButton } from "./ui";
+import { ArrowIcon, Chip, CloseIcon, IconButton } from "./ui";
 
 export function ModuleDetail({
   m,
@@ -48,7 +48,9 @@ export function ModuleDetail({
               {links.map((e) => (
                 <li key={e.id}>
                   <span className="font-medium text-neutral-950">
-                    {name(e.from)} → {name(e.to)}
+                    {name(e.from)}
+                    <ArrowIcon size={13} className="mx-1 inline-block -translate-y-px" />
+                    {name(e.to)}
                   </span>{" "}
                   ({e.label || e.kind}).{" "}
                   <span className="t-mono text-[12px]">

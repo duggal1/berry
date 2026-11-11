@@ -1,12 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { animate, motion, useMotionTemplate, useReducedMotion, useSpring } from "motion/react";
-import type { MotionValue } from "motion/react";
+import { animate, motion, useReducedMotion } from "motion/react";
 import type { Edge, Module, Step } from "@/lib/schema";
-import { EASE_QUINT, SCROLL_SPRING, SPRING } from "@/lib/motion";
+import { EASE_QUINT, SPRING } from "@/lib/motion";
+import { ArrowIcon } from "@/components/ui";
 import { INK, KIND, ROLE, STAGE_BG } from "./palette";
-import { arrowPaths, cylinderPaths, polyPaths, queuePaths, rectPaths } from "./rough";
+import { cylinderPaths, queuePaths, rectPaths } from "./rough";
 import type { RPath } from "./rough";
-import { labelW, layout } from "./layout";
+import { layout, labelWidth, LABEL_H } from "./layout";
 import type { Laid, PEdge, PGroup, PNode } from "./layout";
 
 export type DiagramData = { modules: Module[]; edges: Edge[]; flow: Step[] };
@@ -14,6 +14,29 @@ export type DiagramData = { modules: Module[]; edges: Edge[]; flow: Step[] };
 const STAGGER = 0.07;
 const DRAW = 0.48;
 const PEN_T = 0.9;
+
+const HEAD_L = 11;
+const HEAD_W = 11;
+
+/** A crisp orthogonal wire with a solid, sharp triangular head. */
+function wire(pts: [number, number][]) {
+  const a = pts[pts.length - 2];
+  const b = pts[pts.length - 1];
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const seg = Math.hypot(dx, dy) || 1;
+  const ux = dx / seg;
+  const uy = dy / seg;
+  const L = Math.min(HEAD_L, seg * 0.8);
+  const bx = b[0] - ux * L;
+  const by = b[1] - uy * L;
+  const h = HEAD_W / 2;
+  const body = [...pts.slice(0, -1), [bx, by]]
+    .map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`)
+    .join(" ");
+  const head = `${b[0]},${b[1]} ${bx - uy * h},${by + ux * h} ${bx + uy * h},${by - ux * h}`;
+  return { body, head };
+}
 
 function useDrawn(play: boolean, delay: number) {
   const [drawn, setDrawn] = useState(false);
@@ -150,14 +173,15 @@ const SketchNode = memo(function SketchNode(p: {
             x={20}
             y={30 + ty}
             fontSize={17}
-            fontWeight={600}
+            fontWeight={650}
             fill={INK}
-            style={{ letterSpacing: "-0.02em" }}
+            className="svg-text"
+            style={{ letterSpacing: "-0.03em" }}
           >
             {m.name}
           </text>
-          <text x={20} y={52 + ty} className="font-mono" fontSize={11} fill="#6b6b6b">
-            {fit(m.path, Math.floor((w - 40) / 6.9))}
+          <text x={20} y={52 + ty} className="svg-mono" fontSize={12} fill="#404040">
+            {fit(m.path, Math.floor((w - 40) / 7.2))}
           </text>
         </motion.g>
       </motion.g>
@@ -180,11 +204,7 @@ const SketchEdge = memo(function SketchEdge(p: {
   const { pe, play, lit, dim, current, reduce } = p;
   const col = KIND[pe.e.kind];
   const dashed = pe.e.inferred;
-  const body = useMemo(() => polyPaths(pe.e.id, pe.pts), [pe]);
-  const head = useMemo(
-    () => arrowPaths(pe.e.id, pe.pts[pe.pts.length - 2], pe.pts[pe.pts.length - 1]),
-    [pe],
-  );
+  const { body, head } = useMemo(() => wire(pe.pts), [pe.pts]);
   const drawn = useDrawn(play, p.delay);
   const dly = reduce ? 0 : p.delay;
   const dur = reduce ? 0 : DRAW;
@@ -206,62 +226,50 @@ const SketchEdge = memo(function SketchEdge(p: {
         animate={{ opacity: !play ? 0 : dim ? 0.16 : 1 }}
         transition={{ duration: drawn ? 0.2 : 0.01, delay: drawn ? 0 : dly }}
       >
-        {body.map((x, i) =>
-          dashed ? (
-            <path
-              key={i}
-              d={x.d}
-              fill="none"
-              stroke={col}
-              strokeWidth={1.75}
-              strokeDasharray="7 5"
-              strokeLinecap="round"
-            />
-          ) : (
-            <motion.path
-              key={i}
-              d={x.d}
-              fill="none"
-              stroke={col}
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: play ? 1 : 0 }}
-              transition={{ duration: dur, delay: dly, ease: EASE_QUINT }}
-            />
-          ),
-        )}
-        {head.map((x, i) => (
-          <motion.path
-            key={i}
-            d={x.d}
+        {dashed ? (
+          <path
+            d={body}
             fill="none"
             stroke={col}
-            strokeWidth={1.75}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            strokeWidth={2}
+            strokeDasharray="7 5"
+            strokeLinejoin="miter"
+          />
+        ) : (
+          <motion.path
+            d={body}
+            fill="none"
+            stroke={col}
+            strokeWidth={2}
+            strokeLinejoin="miter"
             initial={{ pathLength: 0 }}
             animate={{ pathLength: play ? 1 : 0 }}
-            transition={{ duration: 0.2, delay: dly + dur, ease: EASE_QUINT }}
+            transition={{ duration: dur, delay: dly, ease: EASE_QUINT }}
           />
-        ))}
-        {lit &&
-          body.map((x, i) => (
-            <motion.path
-              key={`${p.stepKey}-${i}`}
-              d={x.d}
-              fill="none"
-              stroke={col}
-              strokeWidth={3.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={dashed ? "7 5" : undefined}
-              initial={{ pathLength: current && !reduce && !dashed ? 0 : 1 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: PEN_T, ease: EASE_QUINT }}
-            />
-          ))}
+        )}
+        <motion.polygon
+          points={head}
+          fill={col}
+          stroke={col}
+          strokeLinejoin="miter"
+          initial={{ opacity: 0, strokeWidth: 0 }}
+          animate={{ opacity: play ? 1 : 0, strokeWidth: lit ? 1.5 : 0 }}
+          transition={{ opacity: { duration: 0.12, delay: dly + dur }, strokeWidth: SPRING.button }}
+        />
+        {lit && (
+          <motion.path
+            key={p.stepKey}
+            d={body}
+            fill="none"
+            stroke={col}
+            strokeWidth={3.5}
+            strokeLinejoin="miter"
+            strokeDasharray={dashed ? "7 5" : undefined}
+            initial={{ pathLength: current && !reduce && !dashed ? 0 : 1 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: PEN_T, ease: EASE_QUINT }}
+          />
+        )}
       </motion.g>
     </g>
   );
@@ -272,36 +280,38 @@ function EdgeLabel({
   play,
   delay,
   dim,
-  lit,
   reduce,
 }: {
   pe: PEdge;
   play: boolean;
   delay: number;
   dim: boolean;
-  lit: boolean;
   reduce: boolean;
 }) {
   const text = pe.e.label || pe.e.kind;
-  const w = labelW(text);
+  const w = labelWidth(text);
+  const h = LABEL_H;
+  // Positioned by the layout: on the wire, but slid along it to the roomiest point.
+  const x = pe.lx - w / 2;
+  const y = pe.ly - h / 2;
   const drawn = useDrawn(play, delay);
   return (
     <motion.g
       style={{ pointerEvents: "none" }}
       initial={{ opacity: 0 }}
-      animate={{ opacity: !play ? 0 : dim ? 0.16 : 1 }}
+      animate={{ opacity: !play ? 0 : 1 }}
       transition={{ duration: 0.18, delay: drawn || reduce ? 0 : delay + DRAW }}
     >
-      <rect x={pe.lx - w / 2} y={pe.ly - 10} width={w} height={20} fill={STAGE_BG} />
+      {/* Opaque, always. A see-through tag lets the wire run through the letters. */}
+      <rect x={x} y={y} width={w} height={h} fill={dim ? "#e5e5e5" : INK} />
       <text
         x={pe.lx}
-        y={pe.ly}
+        y={pe.ly + 0.5}
         textAnchor="middle"
         dominantBaseline="central"
-        className="font-mono"
+        className="svg-mono"
         fontSize={11}
-        fill={lit ? KIND[pe.e.kind] : "#6b6b6b"}
-        fontWeight={lit ? 500 : 400}
+        fill={dim ? "#737373" : "#fff"}
       >
         {text}
       </text>
@@ -334,54 +344,37 @@ function SketchGroup({ g, play, delay }: { g: PGroup; play: boolean; delay: numb
 }
 
 function Pen({ laid, cur, reduce }: { laid: Laid; cur: Step | undefined; reduce: boolean }) {
-  const dot = useRef<SVGCircleElement>(null);
-  const ring = useRef<SVGCircleElement>(null);
+  const mark = useRef<SVGGElement>(null);
   const path = useRef<SVGPathElement>(null);
   const edge = cur?.edgeId ? laid.edges.find((e) => e.e.id === cur.edgeId) : undefined;
   const node = cur ? laid.nodes.find((n) => n.id === cur.moduleId) : undefined;
   const edgeId = edge?.e.id;
   const nodeId = node?.id;
-  const curId = cur?.id;
 
   useEffect(() => {
-    const c = dot.current;
-    const r = ring.current;
+    const g = mark.current;
     const p = path.current;
-    if (!c || !r || !p) return;
+    if (!g || !node) return;
     let dead = false;
     const place = (x: number, y: number) => {
-      for (const el of [c, r]) {
-        el.setAttribute("cx", String(x));
-        el.setAttribute("cy", String(y));
-        el.style.visibility = "visible";
-      }
+      g.setAttribute("transform", `translate(${x} ${y})`);
+      g.style.visibility = "visible";
     };
-    const hide = () => {
-      for (const el of [c, r]) el.style.visibility = "hidden";
-    };
-    if (!curId || !node) {
-      hide();
-      return;
-    }
-    if (!edge) {
+    if (!edge || !p) {
       place(node.x + 14, node.y + 14);
       return;
     }
-    const len = p.getTotalLength();
-    if (!len) {
-      place(node.x + 14, node.y + 14);
-      return;
-    }
+    // Rests just behind the arrowhead, at the far end of the wire, clear of the label.
+    const end = Math.max(0, p.getTotalLength() - HEAD_L - 4);
     if (reduce) {
-      const e = p.getPointAtLength(len);
+      const e = p.getPointAtLength(end);
       place(e.x, e.y);
       return;
     }
-    const ctl = animate(0, len, {
+    const ctl = animate(0, end, {
       duration: PEN_T,
       ease: EASE_QUINT,
       onUpdate: (v) => {
-        // The path can be emptied or detached mid flight, when the trace moves on.
         if (dead || !p.isConnected) return;
         try {
           const pt = p.getPointAtLength(v);
@@ -396,25 +389,20 @@ function Pen({ laid, cur, reduce }: { laid: Laid; cur: Step | undefined; reduce:
       ctl.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [edgeId, nodeId, curId, reduce]);
+  }, [edgeId, nodeId, reduce]);
 
+  if (!cur || !node) return null;
   return (
     <g pointerEvents="none">
       <path ref={path} d={edge?.d ?? ""} fill="none" stroke="none" />
-      <circle
-        ref={ring}
-        r={10}
-        fill="none"
-        stroke={node ? ROLE[node.m.role] : INK}
-        strokeWidth={2.5}
-        style={{ visibility: "hidden" }}
-      />
-      <circle ref={dot} r={4.5} fill={INK} style={{ visibility: "hidden" }} />
+      <g ref={mark} style={{ visibility: "hidden" }}>
+        <circle r={8.5} fill={STAGE_BG} />
+        <circle r={5.5} fill={INK} />
+        <circle r={2} fill={ROLE[node.m.role]} />
+      </g>
     </g>
   );
 }
-
-const go = (mv: MotionValue<number>, v: number, jump: boolean) => (jump ? mv.jump(v) : mv.set(v));
 
 export function Diagram(props: {
   data: DiagramData;
@@ -430,6 +418,32 @@ export function Diagram(props: {
   const [failed, setFailed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
+
+  // While the page is scrolling the cursor sweeps across modules and wires, firing
+  // enter/leave pairs that flip every other element between lit and dim. That reads as
+  // flicker. Scroll wins: drop the hover state and ignore new hovers until it settles.
+  const scrolling = useRef(false);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      scrolling.current = true;
+      setHover(null);
+      setHoverEdge(null);
+      clearTimeout(t);
+      t = setTimeout(() => (scrolling.current = false), 160);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(t);
+    };
+  }, []);
+  const enter = (id: string) => {
+    if (!scrolling.current) setHover(id);
+  };
+  const enterEdge = (id: string) => {
+    if (!scrolling.current) setHoverEdge(id);
+  };
 
   useEffect(() => {
     let live = true;
@@ -483,39 +497,8 @@ export function Diagram(props: {
     return { nodes, edges };
   }, [hover, selected, hoverEdge, data.edges]);
 
-  const x = useSpring(0, SCROLL_SPRING);
-  const y = useSpring(0, SCROLL_SPRING);
-  const s = useSpring(1, SCROLL_SPRING);
-  const transform = useMotionTemplate`translate(${x}px, ${y}px) scale(${s})`;
-
-  useEffect(() => {
-    if (!laid) return;
-    let tx = 0;
-    let ty = 0;
-    let ts = 1;
-    if (cur) {
-      const ids = new Set<string>([cur.moduleId]);
-      const pe = laid.edges.find((e) => e.e.id === cur.edgeId);
-      if (pe) {
-        ids.add(pe.e.from);
-        ids.add(pe.e.to);
-      }
-      const box = laid.nodes.filter((n) => ids.has(n.id));
-      if (box.length) {
-        const x0 = Math.min(...box.map((n) => n.x)) - 64;
-        const x1 = Math.max(...box.map((n) => n.x + n.w)) + 64;
-        const y0 = Math.min(...box.map((n) => n.y)) - 64;
-        const y1 = Math.max(...box.map((n) => n.y + n.h)) + 64;
-        ts = Math.min(1.45, Math.max(1, Math.min(laid.w / (x1 - x0), laid.h / (y1 - y0))));
-        tx = laid.w / 2 - ((x0 + x1) / 2) * ts;
-        ty = laid.h / 2 - ((y0 + y1) / 2) * ts;
-      }
-    }
-    go(x, tx, reduce);
-    go(y, ty, reduce);
-    go(s, ts, reduce);
-  }, [cur, laid, reduce, x, y, s]);
-
+  // No camera. The sketch stays whole: a zoom or a pan clips modules and stacks the
+  // labels on top of each other. The trace is told by the lit path, not by the camera.
   const depth = useMemo(() => new Map((laid?.nodes ?? []).map((n) => [n.id, n.depth])), [laid]);
   const name = (id: string) => data.modules.find((m) => m.id === id)?.name ?? id;
 
@@ -527,7 +510,7 @@ export function Diagram(props: {
   const ev = evId ? data.edges.find((e) => e.id === evId) : undefined;
 
   return (
-    <div className="relative">
+    <div>
       <div className="overflow-x-auto">
         <svg
           viewBox={`0 0 ${laid.w} ${laid.h}`}
@@ -536,8 +519,7 @@ export function Diagram(props: {
           className="block h-auto w-full min-w-[860px] select-none"
           onClick={() => onSelect(null)}
         >
-          <title>{props.title}</title>
-          <motion.g style={{ transform, transformOrigin: "0px 0px" }}>
+          <motion.g style={{ transformOrigin: "0px 0px" }}>
             {laid.groups.map((g) => (
               <SketchGroup key={g.name} g={g} play={play} delay={0.1} />
             ))}
@@ -562,7 +544,7 @@ export function Diagram(props: {
                   current={mode === "trace" && cur?.edgeId === id}
                   stepKey={step}
                   reduce={reduce}
-                  onEnter={() => setHoverEdge(id)}
+                  onEnter={() => enterEdge(id)}
                   onLeave={() => setHoverEdge(null)}
                 />
               );
@@ -585,11 +567,13 @@ export function Diagram(props: {
                         : false,
                   arrive: mode === "trace" && cur?.moduleId === n.id,
                 }}
-                onEnter={() => setHover(n.id)}
+                onEnter={() => enter(n.id)}
                 onLeave={() => setHover((h) => (h === n.id ? null : h))}
                 onPick={() => onSelect(n.id === selected ? null : n.id)}
               />
             ))}
+            {/* The pen runs under the labels, so a tag never covers the travelling dot. */}
+            <Pen laid={laid} cur={cur} reduce={reduce} />
             {laid.edges.map((pe) => {
               const id = pe.e.id;
               const delay = Math.max(depth.get(pe.e.from) ?? 0, depth.get(pe.e.to) ?? 0) * STAGGER + 0.5;
@@ -600,14 +584,12 @@ export function Diagram(props: {
                   play={play}
                   delay={delay}
                   reduce={reduce}
-                  lit={mode === "trace" ? lit.edges.has(id) : focus.edges.has(id)}
                   dim={
                     mode === "trace" ? !lit.edges.has(id) : mode === "focus" ? !focus.edges.has(id) : false
                   }
                 />
               );
             })}
-            <Pen laid={laid} cur={cur} reduce={reduce} />
           </motion.g>
         </svg>
       </div>
@@ -626,15 +608,23 @@ export function Diagram(props: {
       </ol>
 
       {ev && (
-        <div className="pointer-events-none absolute bottom-2 left-2 max-w-[24rem] bg-white px-4 py-3 text-[14px] leading-[1.45] md:left-4">
-          <p className="font-semibold text-neutral-950">
-            {name(ev.from)} → {name(ev.to)}
+        <div className="mt-3 inline-flex max-w-[46rem] flex-wrap items-start gap-x-6 gap-y-2 bg-neutral-950 px-5 py-4 text-white antialiased">
+          <div className="flex min-w-0 items-center gap-2.5 text-[16px] font-semibold tracking-[-0.025em]">
+            <span
+              className="size-2.5 shrink-0"
+              style={{ background: ev.kind === "call" ? "#fff" : KIND[ev.kind] }}
+            />
+            <span className="truncate">{name(ev.from)}</span>
+            <ArrowIcon size={15} />
+            <span className="truncate">{name(ev.to)}</span>
+          </div>
+          <p className="t-mono min-w-0 flex-1 text-[12px] text-neutral-400">
+            {ev.inferred ? "inferred · backed by " : "found in "}
+            <span className="text-white">{ev.evidence.path}</span>
           </p>
-          <p className="t-mono mt-1 text-neutral-500">
-            {ev.inferred ? "inferred, backed by " : "found in "}
-            <span className="text-neutral-950">{ev.evidence.path}</span>
+          <p className="t-mono w-full text-[12px] leading-[1.55] text-neutral-300">
+            {ev.evidence.snippet}
           </p>
-          <p className="t-mono mt-1 line-clamp-2 text-neutral-500">{ev.evidence.snippet}</p>
         </div>
       )}
     </div>

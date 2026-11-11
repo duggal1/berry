@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import { useInViewOnce } from "@/lib/hooks";
 import type { Trace } from "@/lib/hooks";
 import type { Step } from "@/lib/schema";
@@ -8,16 +8,15 @@ import { INK, KIND, ROLE } from "@/sketch/palette";
 import { ChevronIcon, IconButton, PauseIcon, PlayIcon } from "./ui";
 
 function DotField() {
-  const id = useId().replace(/:/g, "");
   return (
-    <svg aria-hidden className="absolute inset-0 size-full">
-      <defs>
-        <pattern id={id} width="16" height="16" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="0.6" fill="rgba(0,0,0,.14)" />
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill={`url(#${id})`} />
-    </svg>
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0"
+      style={{
+        backgroundImage: "radial-gradient(rgba(0,0,0,.14) 0.6px, transparent 0.7px)",
+        backgroundSize: "16px 16px",
+      }}
+    />
   );
 }
 
@@ -67,24 +66,24 @@ function Legend({ data }: { data: DiagramData }) {
   const roles = useMemo(() => [...new Set(data.modules.map((m) => m.role))], [data.modules]);
   const kinds = useMemo(() => [...new Set(data.edges.map((e) => e.kind))], [data.edges]);
   return (
-    <ul className="relative mx-auto flex max-w-[1680px] flex-wrap gap-x-6 gap-y-2 px-5 pb-8 text-neutral-600 md:px-10">
+    <ul className="relative mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-7 gap-y-2.5 px-5 pb-8 text-neutral-600 md:px-10">
       {roles.map((r) => (
-        <li key={r} className="t-mono flex items-center gap-2">
+        <li key={r} className="flex items-center gap-2 text-[13px] font-medium tracking-[0.02em]">
           <span className="size-2.5" style={{ background: ROLE[r] }} />
           {r}
         </li>
       ))}
       {kinds.map((k) => (
-        <li key={k} className="t-mono flex items-center gap-2">
-          <svg width="28" height="8" aria-hidden>
-            <line x1="1" y1="4" x2="27" y2="4" stroke={KIND[k]} strokeWidth="2" />
+        <li key={k} className="flex items-center gap-2 text-[13px] font-medium tracking-[0.02em]">
+          <svg width="26" height="8" aria-hidden>
+            <line x1="1" y1="4" x2="25" y2="4" stroke={KIND[k]} strokeWidth="2" />
           </svg>
           {k}
         </li>
       ))}
-      <li className="t-mono flex items-center gap-2">
-        <svg width="28" height="8" aria-hidden>
-          <line x1="1" y1="4" x2="27" y2="4" stroke={INK} strokeWidth="2" strokeDasharray="6 4" />
+      <li className="flex items-center gap-2 text-[13px] font-medium tracking-[0.02em]">
+        <svg width="26" height="8" aria-hidden>
+          <line x1="1" y1="4" x2="25" y2="4" stroke={INK} strokeWidth="2" strokeDasharray="6 4" />
         </svg>
         inferred
       </li>

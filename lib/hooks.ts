@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { analyzeRepo } from "./api";
 import { saveAnalysis } from "./store";
-import type { Analysis, AnalysisCore, Stage } from "./schema";
+import type { Analysis, AnalysisCore, Stage, TraceItem } from "./schema";
 
 export type Route =
   | { name: "home" }
@@ -115,8 +115,24 @@ export function useTrace(n: number) {
 
 export type Trace = ReturnType<typeof useTrace>;
 
+/** Upsert one trace row. `text` is a delta, `label` replaces, `done` closes it. */
+function mergeTrace(list: TraceItem[], ev: TraceItem): TraceItem[] {
+  const i = list.findIndex((x) => x.id === ev.id);
+  if (i < 0) return [...list, ev];
+  const prev = list[i];
+  const c = list.slice();
+  c[i] = {
+    ...prev,
+    label: ev.label || prev.label,
+    text: prev.text + ev.text,
+    done: ev.done || prev.done,
+  };
+  return c;
+}
+
 export function useAnalysisRun(url: string, token: string | null) {
   const [stages, setStages] = useState<Stage[]>([]);
+  const [trace, setTrace] = useState<TraceItem[]>([]);
   const [core, setCore] = useState<AnalysisCore | null>(null);
   const [prompt, setPrompt] = useState("");
   const [status, setStatus] = useState<"running" | "done" | "error">("running");
@@ -126,17 +142,37 @@ export function useAnalysisRun(url: string, token: string | null) {
     const ac = new AbortController();
     let latest: AnalysisCore | null = null;
     let text = "";
+    let queue: TraceItem[] = [];
+    let frame = 0;
+
+    const flush = () => {
+      frame = 0;
+      const batch = queue;
+      queue = [];
+      if (batch.length) setTrace((t) => batch.reduce(mergeTrace, t));
+      setPrompt(text);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(flush);
+    };
+
     (async () => {
       try {
         for await (const ev of analyzeRepo(url, token, ac.signal)) {
-          if (ev.type === "stage") setStages((s) => [...s.filter((x) => x.id !== ev.stage.id), ev.stage]);
-          else if (ev.type === "analysis") {
+          if (ev.type === "stage")
+            setStages((s) => [...s.filter((x) => x.id !== ev.stage.id), ev.stage]);
+          else if (ev.type === "trace") {
+            queue.push(ev.item);
+            schedule();
+          } else if (ev.type === "analysis") {
             latest = ev.analysis;
             setCore(ev.analysis);
           } else if (ev.type === "prompt") {
             text += ev.text;
-            setPrompt(text);
+            schedule();
           } else if (latest) {
+            cancelAnimationFrame(frame);
+            flush();
             const rec = await saveAnalysis({ ...latest, codingPrompt: text });
             history.replaceState(null, "", `#/r/${rec.id}`);
             setStatus("done");
@@ -151,12 +187,15 @@ export function useAnalysisRun(url: string, token: string | null) {
         }
       }
     })();
-    return () => ac.abort();
+    return () => {
+      ac.abort();
+      cancelAnimationFrame(frame);
+    };
   }, [url, token]);
 
   const analysis = useMemo<Analysis | null>(
     () => (core ? { ...core, codingPrompt: prompt } : null),
     [core, prompt],
   );
-  return { stages, analysis, status, error };
+  return { stages, trace, analysis, status, error };
 }

@@ -21,6 +21,7 @@ export const metadata: Metadata = {
   title: "Berry",
   description:
     "Paste a GitHub URL. Get an architecture sketch, the path one request takes, and a prompt that briefs a coding agent.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   icons: {
     icon: "/dots.svg",
     shortcut: "/dots.svg",

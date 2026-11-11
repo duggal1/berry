@@ -1,5 +1,6 @@
 import type { Analysis } from "./schema";
 const ev=(path:string,snippet:string)=>({path,snippet});
+const FENCE = "`".repeat(3);
 export const EXAMPLE:Analysis={meta:{repo:"example/orders-api",sha:"demo",title:"Orders API, as it runs",generatedAt:"2026-01-01T00:00:00Z"},summary:["Orders API takes order requests over HTTP, checks who is calling, and turns valid requests into saved orders.","The order logic is the center of the system: it writes to the orders database, charges the card through a payments client, and queues the shipping work.","A separate worker reads that queue, marks the order as shipped and sends a receipt by email.","Two outside services sit at the edges: a payment provider and an email provider.","One request travels from the HTTP layer through auth and order logic, then splits into a saved row, a charge and a queued job."],stack:["TypeScript","HTTP API","Job queue","SQL database"],modules:[
 {id:"api",name:"HTTP API",role:"entry",kind:"service",purpose:"Receives order requests and validates them.",path:"src/api",files:["src/api/server.ts","src/api/routes.ts","src/api/validate.ts"],group:""},
 {id:"auth",name:"Auth",role:"core",kind:"service",purpose:"Checks the caller's token before anything else runs.",path:"src/auth",files:["src/auth/verify.ts","src/auth/session.ts"],group:""},
@@ -25,26 +26,48 @@ export const EXAMPLE:Analysis={meta:{repo:"example/orders-api",sha:"demo",title:
 {id:"s4",moduleId:"db",edgeId:"e3",title:"Order is saved",text:"The draft is inserted into the orders database."},
 {id:"s5",moduleId:"payments",edgeId:"e4",title:"Card is charged",text:"The payments client asks the provider to take the money."},
 {id:"s6",moduleId:"queue",edgeId:"e6",title:"Shipping is queued",text:"A ship job is pushed so the response does not wait for fulfilment."},
-{id:"s7",moduleId:"worker",edgeId:"e7",title:"Worker takes the job",text:"The worker picks the job up, marks the order shipped and emails a receipt."}],interview:{pitch:"Orders API is a small order pipeline. A request is authenticated, turned into a saved order, charged through an outside provider, and handed to a background worker through a queue so the customer gets a fast response. I kept the money path synchronous and everything slow asynchronous.",tradeoffs:["The charge happens before the response, so a slow provider slows the request.","The queue decouples shipping from the request, at the cost of eventual consistency on order state.","Order logic owns both the database write and the charge, so a failure between them needs a clear recovery rule."],questions:[{q:"Why queue the shipping work?",a:"Shipping and receipts are slow and can fail independently. Queuing them keeps the request fast and lets the worker retry without touching the customer's request."},{q:"What happens if the charge succeeds but the queue push fails?",a:"The order is paid but not shipped. The order state stays at paid, and a sweep job or manual retry should re-queue it. That recovery path is the weak spot to name."},{q:"Where would you add idempotency?",a:"On create order, keyed by a client-supplied request id, so a retried request cannot charge twice."}]},codingPrompt:`You are joining the example/orders-api codebase. Read this before you change anything.
-
-Architecture
-- src/api is the only entry point. It validates the request and routes it. It holds no business rules.
-- src/auth verifies the caller's token. Every route calls it first.
-- src/orders is the core. It prices the cart, inserts the order into src/db, charges through src/payments, then pushes a ship job to src/jobs.
-- src/worker consumes the ship job, marks the order shipped in src/db and sends a receipt through the email provider.
-- src/payments and the email client wrap outside services. Keep provider calls inside them.
-
-Request path
-1. HTTP API receives the create-order request.
-2. Auth verifies the token.
-3. Order logic builds and saves the order, charges the card and queues shipping.
-4. The worker finishes the order asynchronously.
-
-Rules
-- Put new business logic in src/orders, not in src/api.
-- Never call the payment or email provider outside their client modules.
-- A change to order state must also update the worker's assumptions in src/worker/ship.ts.
-
-Known weak spots
-- A failure between the charge and the queue push leaves a paid order that is not shipped.
-- Create order has no idempotency key yet.`};
+{id:"s7",moduleId:"worker",edgeId:"e7",title:"Worker takes the job",text:"The worker picks the job up, marks the order shipped and emails a receipt."}],interview:{pitch:"Orders API is a small order pipeline. A request is authenticated, turned into a saved order, charged through an outside provider, and handed to a background worker through a queue so the customer gets a fast response. I kept the money path synchronous and everything slow asynchronous.",tradeoffs:["The charge happens before the response, so a slow provider slows the request.","The queue decouples shipping from the request, at the cost of eventual consistency on order state.","Order logic owns both the database write and the charge, so a failure between them needs a clear recovery rule."],questions:[{q:"Why queue the shipping work?",a:"Shipping and receipts are slow and can fail independently. Queuing them keeps the request fast and lets the worker retry without touching the customer's request."},{q:"What happens if the charge succeeds but the queue push fails?",a:"The order is paid but not shipped. The order state stays at paid, and a sweep job or manual retry should re-queue it. That recovery path is the weak spot to name."},{q:"Where would you add idempotency?",a:"On create order, keyed by a client-supplied request id, so a retried request cannot charge twice."}]},codingPrompt:[
+"# example/orders-api",
+"",
+"You are joining this codebase. **Read this before you change anything.**",
+"",
+"## Architecture",
+"",
+"- `src/api` is the only entry point. It validates the request and routes it. It holds **no business rules**.",
+"- `src/auth` verifies the caller's token. Every route calls it first.",
+"- `src/orders` is the core. It prices the cart, inserts the order into `src/db`, charges through `src/payments`, then pushes a ship job to `src/jobs`.",
+"- `src/worker` consumes the ship job, marks the order shipped in `src/db` and sends a receipt through the email provider.",
+"- `src/payments` and the email client wrap outside services. Keep provider calls inside them.",
+"",
+"## Module map",
+"",
+"| Module | Path | Role |",
+"| --- | --- | --- |",
+"| HTTP API | `src/api` | entry |",
+"| Order logic | `src/orders` | core |",
+"| Orders DB | `src/db` | data |",
+"| Worker | `src/worker` | utility |",
+"",
+"## Request path",
+"",
+"1. HTTP API receives the create-order request.",
+"2. Auth verifies the token.",
+"3. Order logic builds and saves the order, charges the card and queues shipping.",
+"4. The worker finishes the order asynchronously.",
+"",
+"## Rules",
+"",
+"- Put new business logic in `src/orders`, not in `src/api`.",
+"- Never call the payment or email provider outside their client modules.",
+"- A change to order state must also update the worker's assumptions in `src/worker/ship.ts`.",
+"",
+"> A failure between the charge and the queue push leaves a paid order that is not shipped.",
+"",
+"## Known weak spots",
+"",
+"- Create order has no idempotency key yet. Target shape:",
+"",
+FENCE+"ts",
+"createOrder(user, body, { idempotencyKey })",
+FENCE,
+].join("\n")};
