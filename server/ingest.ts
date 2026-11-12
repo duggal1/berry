@@ -218,16 +218,7 @@ export async function ingest(resolved: Resolved, userToken: string | null, signa
   const cfg = config();
   const { ref, sha, branch } = resolved;
 
-  if (resolved.sizeKb * 1024 > cfg.MAX_ARCHIVE_BYTES) {
-    throw new HttpError(413, "This repository is too large to analyze.");
-  }
-
   const res = await github(`/repos/${ref.owner}/${ref.name}/zipball/${sha}`, userToken, signal);
-  const declared = Number(res.headers.get("content-length") ?? "0");
-  if (declared && declared > cfg.MAX_ARCHIVE_BYTES) {
-    throw new HttpError(413, "This repository is too large to analyze.");
-  }
-
   const archive = new Uint8Array(await res.arrayBuffer());
   if (archive.length > cfg.MAX_ARCHIVE_BYTES) {
     throw new HttpError(413, "This repository is too large to analyze.");
@@ -253,7 +244,15 @@ export async function ingest(resolved: Resolved, userToken: string | null, signa
           skipped.large += 1;
           return false;
         }
-        return budget(file);
+        try {
+          return budget(file);
+        } catch (e) {
+          if (e instanceof ArchiveLimitExceeded) {
+            skipped.large += 1;
+            return false;
+          }
+          throw e;
+        }
       },
     });
   } catch (e) {
@@ -304,13 +303,15 @@ export async function ingest(resolved: Resolved, userToken: string | null, signa
       continue;
     }
 
-    bytes += data.length;
-    if (bytes > cfg.MAX_TOTAL_BYTES) {
-      throw new HttpError(413, "This repository is too large to analyze.");
+    if (bytes + data.length > cfg.MAX_TOTAL_BYTES) {
+      skipped.large += 1;
+      continue;
     }
     if (files.size >= cfg.MAX_FILES) {
-      throw new HttpError(413, "This repository has too many files to analyze.");
+      skipped.large += 1;
+      continue;
     }
+    bytes += data.length;
     files.set(path, text);
   }
 

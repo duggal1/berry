@@ -38,56 +38,57 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
   const fork = cur?.actions.find((action) => action.kind === "fork");
   const canPlay = scenes.length > 0;
   const reduce = useReducedMotion() ?? false;
+
   return (
-    <div className="relative mx-auto flex max-w-[1680px] flex-col gap-4 px-5 pb-6 pt-2 md:flex-row md:items-center md:gap-6 md:px-10">
-      <div className="flex shrink-0 gap-2">
-        <IconButton label="Previous scene" onClick={trace.prev} disabled={trace.step < 0}>
-          <ChevronIcon dir="left" />
-        </IconButton>
-        <IconButton
-          label={trace.playing ? "Pause" : "Play explanation"}
-          onClick={trace.toggle}
-          disabled={!canPlay}
-        >
-          {trace.playing ? <PauseIcon /> : <PlayIcon />}
-        </IconButton>
-        <IconButton label="Restart explanation" onClick={trace.restart} disabled={!canPlay}>
-          <span aria-hidden="true" className="text-[18px] leading-none">↻</span>
-        </IconButton>
-        <IconButton label="Next scene" onClick={trace.next} disabled={trace.step >= scenes.length - 1}>
-          <ChevronIcon dir="right" />
-        </IconButton>
+    <div className="relative mx-auto flex max-w-[1680px] flex-col gap-5 px-5 pb-6 pt-3 md:px-10">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 gap-2">
+          <IconButton label="Previous scene" onClick={trace.prev} disabled={trace.step < 0}>
+            <ChevronIcon dir="left" />
+          </IconButton>
+          <IconButton label={trace.playing ? "Pause" : "Play explanation"} onClick={trace.toggle} disabled={!canPlay}>
+            {trace.playing ? <PauseIcon /> : <PlayIcon />}
+          </IconButton>
+          <IconButton label="Restart explanation" onClick={trace.restart} disabled={!canPlay}>
+            <span aria-hidden="true" className="text-[18px] leading-none">↻</span>
+          </IconButton>
+          <IconButton label="Next scene" onClick={trace.next} disabled={trace.step >= scenes.length - 1}>
+            <ChevronIcon dir="right" />
+          </IconButton>
+        </div>
+        <Segmented
+          id="speed"
+          value={String(trace.speed)}
+          onChange={(v) => trace.setSpeed(Number(v))}
+          options={SPEEDS.map((s) => ({ id: String(s), label: `${s}×` }))}
+        />
+        <p className="ml-auto text-[14px] font-medium tabular-nums text-neutral-500">
+          {trace.step >= 0 ? `${trace.step + 1} / ${scenes.length}` : `${scenes.length} scenes`}
+        </p>
       </div>
-      <Segmented
-        id="story-speed"
-        value={String(trace.speed)}
-        onChange={(value) => trace.setSpeed(Number(value))}
-        options={SPEEDS.map((value) => ({ id: String(value), label: `${value}×` }))}
-      />
-      <p className="shrink-0 text-[13px] tabular-nums text-neutral-500">
-        {trace.step >= 0 ? `${trace.step + 1} / ${scenes.length}` : `${scenes.length} scenes`}
-      </p>
-      <div aria-live="polite" className="min-h-[9.5rem] min-w-0 flex-1">
+
+      <div aria-live="polite" className="min-h-[9.5rem] min-w-0">
         {cur ? (
           <motion.div
             key={cur.id}
             initial={reduce ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={reduce ? undefined : { opacity: 0 }}
-            transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_QUINT }}
+            transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_QUINT }}
           >
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p className="text-[22px] font-semibold leading-[1.1] tracking-tight md:text-[28px]">{cur.title}</p>
-              {cur.branchMode === "exclusive" && <span className="t-mono text-[11px] text-neutral-500">alternative outcome</span>}
-              {cur.branchMode === "independent" && <span className="t-mono text-[11px] text-neutral-500">independent consequence</span>}
-              {cur.kind === "deferred" && <span className="t-mono text-[11px] text-neutral-500">after response</span>}
-              {fork && <span className="t-mono text-[11px] text-neutral-500">{fork.mode === "exclusive" ? "conditional alternatives" : "independent branches"}</span>}
-              {cur.unverified && <span className="t-mono text-[11px] text-neutral-500">unverified transition</span>}
+              {cur.branchMode === "exclusive" && <span className="text-[13px] font-medium text-neutral-500">alternative outcome</span>}
+              {cur.branchMode === "independent" && <span className="text-[13px] font-medium text-neutral-500">independent consequence</span>}
+              {cur.kind === "deferred" && <span className="text-[13px] font-medium text-neutral-500">after response</span>}
+              {fork && (
+                <span className="text-[13px] font-medium text-neutral-500">
+                  {fork.mode === "exclusive" ? "conditional alternatives" : "independent branches"}
+                </span>
+              )}
+              {cur.unverified && <span className="text-[13px] font-medium text-neutral-500">unverified transition</span>}
             </div>
-            <p className="mt-1 text-[16px] leading-[1.45] text-neutral-600">{cur.caption}</p>
-            {parents.length > 0 && (
-              <p className="mt-1 text-[13px] text-neutral-500">Triggered by {parents.join(" and ")}</p>
-            )}
+            <p className="mt-1 max-w-[60rem] text-[16px] leading-[1.45] text-neutral-600">{cur.caption}</p>
+            {parents.length > 0 && <p className="mt-1 text-[13px] text-neutral-500">Triggered by {parents.join(" and ")}</p>}
             {inferred.length > 0 && (
               <p className="mt-1 text-[13px] text-neutral-500">
                 Inferred relationship · the cited source suggests this runtime link, but static analysis cannot confirm its target.
@@ -101,26 +102,17 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
                 </code>
               </details>
             ))}
-            {trace.step === scenes.length - 1 && (
-              <p className="mt-2 text-[13px] text-neutral-600">{story.completion.summary}</p>
-            )}
+            {trace.step === scenes.length - 1 && <p className="mt-2 text-[13px] text-neutral-600">{story.completion.summary}</p>}
           </motion.div>
         ) : (
-          <motion.p
-            key="idle"
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_QUINT }}
-            className="text-[18px] leading-[1.4] text-neutral-600 md:text-[20px]"
-          >
+          <p className="text-[18px] leading-[1.4] text-neutral-600 md:text-[20px]">
             {canPlay
               ? "Play follows the verified scenes and their independent consequences."
               : "No verified story scenes are available for this repository."}
-          </motion.p>
+          </p>
         )}
         {story.completion.status !== "success" && (
-          <p className="mt-1 text-[13px] text-neutral-500">Partial explanation · {story.completion.summary}</p>
+          <p className="mt-2 text-[13px] text-neutral-500">Partial explanation · {story.completion.summary}</p>
         )}
       </div>
     </div>
