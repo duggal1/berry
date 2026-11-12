@@ -4,7 +4,6 @@ import { motion, useReducedMotion, useTransform } from "motion/react";
 import type { MotionValue } from "motion/react";
 import type { Edge, Module, Story, StoryAction } from "@/lib/schema";
 import { EASE_QUINT, SPRING } from "@/lib/motion";
-import { ArrowIcon } from "@/components/ui";
 import { Canvas } from "@/components/Canvas";
 import type { FocusRegion } from "@/components/Canvas";
 import { logoUrl } from "@/lib/logos";
@@ -701,9 +700,6 @@ export function Diagram(props: {
     return <p className="p-6 text-[15px] text-neutral-500">The sketch could not be laid out.</p>;
   if (!laid) return <div className="h-96" aria-busy />;
 
-  const evId = hoverEdge ?? (mode === "trace" ? currentEdgeIds.values().next().value ?? null : null);
-  const ev = evId ? data.edges.find((e) => e.id === evId) : undefined;
-
   return (
     <div>
       <Canvas
@@ -808,7 +804,7 @@ export function Diagram(props: {
         ))}
       </ol>
 
-      {ev && (
+      {/* {ev && (
         <div className="mt-3 inline-flex max-w-[46rem] flex-wrap items-start gap-x-6 gap-y-2 bg-neutral-950 px-5 py-4 text-white antialiased">
           <div className="flex min-w-0 items-center gap-2.5 text-[16px] font-semibold tracking-[-0.025em]">
             <span
@@ -827,7 +823,7 @@ export function Diagram(props: {
             {ev.evidence.snippet}
           </p>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
