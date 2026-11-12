@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { SPEEDS, useInViewOnce } from "@/lib/hooks";
 import { EASE_QUINT } from "@/lib/motion";
 import type { Trace } from "@/lib/hooks";
@@ -67,8 +67,7 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
       <p className="shrink-0 text-[13px] tabular-nums text-neutral-500">
         {trace.step >= 0 ? `${trace.step + 1} / ${scenes.length}` : `${scenes.length} scenes`}
       </p>
-      <div aria-live="polite" className="min-h-[3.75rem] min-w-0 flex-1">
-        <AnimatePresence initial={false}>
+      <div aria-live="polite" className="min-h-[9.5rem] min-w-0 flex-1">
         {cur ? (
           <motion.div
             key={cur.id}
@@ -120,7 +119,6 @@ function TraceBar({ trace, story, edges }: { trace: Trace; story: Story; edges: 
               : "No verified story scenes are available for this repository."}
           </motion.p>
         )}
-        </AnimatePresence>
         {story.completion.status !== "success" && (
           <p className="mt-1 text-[13px] text-neutral-500">Partial explanation · {story.completion.summary}</p>
         )}
@@ -185,6 +183,7 @@ export function Stage(props: {
           play={seen}
           step={props.trace.step}
           progress={props.trace.progress}
+          travel={props.trace.travelSec}
           focusResetKey={props.trace.cameraResetKey}
           selected={props.selected}
           onSelect={props.onSelect}

@@ -134,6 +134,7 @@ export function useTrace(story: Story) {
       ease: "linear",
       onComplete: () => {
         if (run.current !== token || !chain) return;
+        remainingMs.current = 0;
         if (index >= scenes.length - 1) {
           setPlaying(false);
           playingRef.current = false;
@@ -182,8 +183,9 @@ export function useTrace(story: Story) {
     }
     if (!scenes.length) return;
     const current = stepRef.current;
-    const index = current < 0 || current >= scenes.length - 1 ? 0 : current;
-    if (current < 0 || current >= scenes.length - 1) {
+    const restart = current < 0 || (current >= scenes.length - 1 && remainingMs.current <= 0);
+    const index = restart ? 0 : current;
+    if (restart) {
       progress.jump(0);
       remainingMs.current = 0;
       setCameraResetKey((key) => key + 1);

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { motion, useReducedMotion, useTransform } from "motion/react";
 import type { MotionValue } from "motion/react";
@@ -141,19 +141,22 @@ function edgeIdsForActions(actions: StoryAction[]): string[] {
   });
 }
 
-type Look = { emph: boolean; hover: boolean; dim: boolean; arrive: boolean };
-
 const SketchNode = memo(function SketchNode(p: {
   n: PNode;
   play: boolean;
   delay: number;
-  look: Look;
+  emph: boolean;
+  hover: boolean;
+  dim: boolean;
+  arrive: boolean;
+  arriveDelay: number;
   reduce: boolean;
-  onEnter: () => void;
-  onLeave: () => void;
-  onPick: () => void;
+  onEnter: (id: string) => void;
+  onLeave: (id: string) => void;
+  onPick: (id: string) => void;
 }) {
-  const { n, play, look, reduce } = p;
+  const { n, play, reduce } = p;
+  const look = p;
   const { m, w, h } = n;
   const color = ROLE[m.role];
   const paths = useMemo<RPath[]>(
@@ -190,7 +193,7 @@ const SketchNode = memo(function SketchNode(p: {
   const drawn = useDrawn(play, p.delay);
   const dly = reduce ? 0 : p.delay;
   const dur = reduce ? 0 : DRAW;
-  const arrive = look.arrive && !reduce ? 0.2 : 0;
+  const arrive = look.arrive && !reduce ? p.arriveDelay : 0;
   const sw = look.hover || look.emph ? 2.25 : 1.5;
   const tint = look.emph ? 0.3 : look.hover ? 0.2 : 0.1;
   const hatch = look.emph ? 0.9 : look.hover ? 0.75 : 0.45;
@@ -203,18 +206,18 @@ const SketchNode = memo(function SketchNode(p: {
       tabIndex={0}
       aria-label={`${m.name}. ${m.purpose}`}
       style={{ cursor: "pointer", outline: "none" }}
-      onMouseEnter={p.onEnter}
-      onMouseLeave={p.onLeave}
-      onFocus={p.onEnter}
-      onBlur={p.onLeave}
+      onMouseEnter={() => p.onEnter(m.id)}
+      onMouseLeave={() => p.onLeave(m.id)}
+      onFocus={() => p.onEnter(m.id)}
+      onBlur={() => p.onLeave(m.id)}
       onClick={(e) => {
         e.stopPropagation();
-        p.onPick();
+        p.onPick(m.id);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          p.onPick();
+          p.onPick(m.id);
         }
       }}
     >
@@ -320,7 +323,7 @@ const SketchEdge = memo(function SketchEdge(p: {
   stepKey: number;
   progress: MotionValue<number>;
   reduce: boolean;
-  onEnter: () => void;
+  onEnter: (id: string) => void;
   onLeave: () => void;
 }) {
   const { pe, play, lit, dim, current, progress, reduce } = p;
@@ -339,7 +342,7 @@ const SketchEdge = memo(function SketchEdge(p: {
         stroke="transparent"
         strokeWidth={16}
         style={{ cursor: "pointer" }}
-        onMouseEnter={p.onEnter}
+        onMouseEnter={() => p.onEnter(pe.e.id)}
         onMouseLeave={p.onLeave}
       />
       <motion.g
@@ -570,6 +573,7 @@ export function Diagram(props: {
   play: boolean;
   step: number;
   progress: MotionValue<number>;
+  travel: number;
   focusResetKey: number;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -603,12 +607,15 @@ export function Diagram(props: {
       clearTimeout(t);
     };
   }, []);
-  const enter = (id: string) => {
+  const enter = useCallback((id: string) => {
     if (!scrolling.current) setHover(id);
-  };
-  const enterEdge = (id: string) => {
+  }, []);
+  const leave = useCallback((id: string) => setHover((value) => value === id ? null : value), []);
+  const pick = useCallback((id: string) => onSelect(id === selected ? null : id), [onSelect, selected]);
+  const enterEdge = useCallback((id: string) => {
     if (!scrolling.current) setHoverEdge(id);
-  };
+  }, []);
+  const leaveEdge = useCallback(() => setHoverEdge(null), []);
 
   useEffect(() => {
     let live = true;
@@ -625,10 +632,6 @@ export function Diagram(props: {
   }, [data.modules, data.edges, data.story]);
 
   const cur = step >= 0 ? data.story.scenes[step] : undefined;
-  const reached = useTransform(progress, (value) => value >= 1);
-  const [arrived, setArrived] = useState(progress.get() >= 1);
-  useEffect(() => reached.on("change", setArrived), [reached]);
-
   const mode: "trace" | "focus" | "idle" = cur ? "trace" : hover || selected || hoverEdge ? "focus" : "idle";
 
   const lit = useMemo(() => {
@@ -741,8 +744,8 @@ export function Diagram(props: {
                   stepKey={step}
                   progress={progress}
                   reduce={reduce}
-                  onEnter={() => enterEdge(id)}
-                  onLeave={() => setHoverEdge(null)}
+                  onEnter={enterEdge}
+                  onLeave={leaveEdge}
                 />
               );
             })}
@@ -753,20 +756,14 @@ export function Diagram(props: {
                 play={play}
                 delay={n.depth * STAGGER}
                 reduce={reduce}
-                look={{
-                  emph: mode === "trace" ? lit.nodes.has(n.id) : n.id === selected,
-                  hover: mode !== "trace" && n.id === hover,
-                  dim:
-                    mode === "trace"
-                      ? !lit.nodes.has(n.id)
-                      : mode === "focus"
-                        ? !focus.nodes.has(n.id)
-                        : false,
-                  arrive: mode === "trace" && currentModuleIds.has(n.id) && arrived,
-                }}
-                onEnter={() => enter(n.id)}
-                onLeave={() => setHover((h) => (h === n.id ? null : h))}
-                onPick={() => onSelect(n.id === selected ? null : n.id)}
+                emph={mode === "trace" ? lit.nodes.has(n.id) : n.id === selected}
+                hover={mode !== "trace" && n.id === hover}
+                dim={mode === "trace" ? !lit.nodes.has(n.id) : mode === "focus" ? !focus.nodes.has(n.id) : false}
+                arrive={mode === "trace" && currentModuleIds.has(n.id)}
+                arriveDelay={props.travel * 0.85}
+                onEnter={enter}
+                onLeave={leave}
+                onPick={pick}
               />
             ))}
             {/* The pen runs under the labels, so a tag never covers the travelling dot. */}

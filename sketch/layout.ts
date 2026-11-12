@@ -76,6 +76,7 @@ function placeLabel(p: PEdge, nodes: Rect[], taken: Rect[]) {
     const [x0, y0] = pts[i - 1];
     const [x1, y1] = pts[i];
     const len = Math.hypot(x1 - x0, y1 - y0);
+    if (len < 1) continue;
     // Keep the tag clear of the node ports and of the arrowhead.
     const from = Math.min(18, len / 4);
     const to = len - Math.min(20, len / 4);
@@ -300,6 +301,8 @@ async function place(modules: Module[], edges: Edge[], story: Story, grouped: bo
       },
     ];
   });
+
+  if (grouped && groupsByName.size && pe.length < real.length) throw new Error("compound layout dropped edges");
 
   // Place the tags last, so each one can see the boxes and the tags already placed.
   const nodeRects: Rect[] = nodes.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h }));
